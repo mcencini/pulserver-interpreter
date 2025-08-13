@@ -18,5 +18,4 @@ def test_sequence_definition(mprage, Nz):
 
     # Check that the internal pypulseq sequence only stores the first instance of the TR
     # The number of blocks should match the length of the TRID definition for the first TRID
-    assert len(seq._pypulseq_seq.block_events) == len(expected)
-
+    assert len(seq._seq.block_events) == len(expected)
