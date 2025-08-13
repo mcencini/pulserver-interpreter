@@ -2,12 +2,12 @@ default_language_version:
   python: python3
 
 repos:
+  # Basic hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: check-added-large-files
         exclude: ^tests/expected_output/pulseq_calcAdcSeg.txt
-      # - id: check-docstring-first
       - id: check-merge-conflict
       - id: check-yaml
       - id: check-toml
@@ -15,25 +15,23 @@ repos:
         exclude: ^.vscode/
       - id: mixed-line-ending
 
+  # Black first
+  - repo: https://github.com/psf/black
+    rev: 23.9.1
+    hooks:
+      - id: black
+        language_version: python3.10  # Match your project
+
+  # Ruff second
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.7
     hooks:
-      - id: ruff # linter
-        args: [--fix]
-      - id: ruff-format # formatter
+      - id: ruff
+        args: ["check", "."]   # Just lint, don't format
 
+  # Typos
   - repo: https://github.com/crate-ci/typos
     rev: v1
     hooks:
       - id: typos
         exclude: ^examples/|paper.md
-
-ci:
-  autofix_commit_msg: |
-    [pre-commit] auto fixes from pre-commit hooks
-  autofix_prs: true
-  autoupdate_branch: ""
-  autoupdate_commit_msg: "[pre-commit] pre-commit autoupdate"
-  autoupdate_schedule: monthly
-  skip: []
-  submodules: false

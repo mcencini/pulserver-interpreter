@@ -100,7 +100,22 @@ exclude = ["doc/**"]
 # RUFF section
 [tool.ruff.lint]
 select = [
-  "A", "ARG", "B", "C4", "COM", "F", "I", "NPY", "RUF", "S", "SIM", "PIE", "PTH", "Q", "W", "YTT"
+  "A", 
+  "ARG", 
+  "B", 
+  "C4", 
+  "COM", 
+  "F", 
+  "I", 
+  "NPY", 
+  "RUF", 
+  "S", 
+  "SIM", 
+  "PIE", 
+  "PTH", 
+  "Q", 
+  "W", 
+  "YTT",
 ]
 ignore = [
     "E501",  # line too long
@@ -109,7 +124,7 @@ ignore = [
     "COM812", # missing trailing comma
     "Q000", "Q001", "Q002",  # quote rules handled by Black
     "I001", "I002",          # isort handled by Black
-    "S101"
+    "S101",
 ]
 extend-ignore = [
     "E501",  # line too long → Black wraps
