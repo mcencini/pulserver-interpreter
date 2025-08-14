@@ -2,7 +2,6 @@
 
 __all__ = ["Sequence"]
 
-from types import SimpleNamespace
 import numpy as np
 
 from pypulseq import Opts
@@ -44,32 +43,40 @@ class Sequence:
         use_block_cache : bool, optional
             Whether to use block cache (default: True).
         """
-        self._mode = "prep"  # 'prep' or 'eval'
+        self._mode = "prep"  # 'prep', 'eval', or 'rt'
         self._current_trid = None  # The TRID currently being built
         self._seq = PyPulseqSequence(system=system, use_block_cache=use_block_cache)
-        self._trid_events = {}
-        self._tr_cursor = {}
-        self._segment_cursor = {}
 
-        self._tr_library = {}
-        self._segment_library = {}
-        self._block_library = PyPulseqSequence(system=system)
-        
+        # --- Core libraries and mappings ---
+        self.trid_events = {}  # dict: TRID -> list of TRID events (per block in TR)
+        self.trid_to_block_indices = (
+            {}
+        )  # dict: TRID -> np.ndarray of block indices (per TR)
+        self.trid_to_segment_ids = (
+            {}
+        )  # dict: TRID -> np.ndarray of segment IDs (per block in TR)
+        self.trid_to_within_segment_idx = (
+            {}
+        )  # dict: TRID -> np.ndarray of within-segment indices (per block in TR)
+        self.trid_definitions = {}  # dict: TRID -> tuple of segment IDs (in order)
+        self.segment_library = {}  # dict: segment_id -> tuple of block IDs
+        self.block_library = None  # PyPulseqSequence containing all unique blocks
+
+        # --- State for eval mode ---
+        self.eval_stats = {}  # dict: TRID -> np.ndarray (n_blocks, 8) of stats
         self.adc_count = 0
-        self._eval_stats = {}
-        self._eval_tr_idx = 0
-        self._eval_block_idx = 0
-        self._eval_trid_list = []
-        self._eval_tr_block_counts = {}
-        
+        self._eval_trid_list = []  # list of TRIDs in eval order
+        self._eval_tr_block_counts = {}  # dict: TRID -> number of blocks in TR
+        self._eval_tr_idx = 0  # current TR index in eval
+        self._eval_block_idx = 0  # current block index in TR in eval
+
+        # --- Counters ---
+        self._prep_counts = 0  # number of add_block calls in preparation mode
+        self._eval_counts = 0  # number of add_block calls in evaluation mode
+
     def add_block(self, *args) -> None:
         """
         Add a block to the sequence, dispatching to the appropriate method based on mode.
-
-        Parameters
-        ----------
-        *args : SimpleNamespace
-            Events to add as a block (including possible TRID label as a SimpleNamespace).
         """
         if self._mode == "prep":
             self._add_block_prep(*args)
@@ -81,13 +88,7 @@ class Sequence:
     def _add_block_prep(self, *args) -> None:
         """
         Add a block in preparation mode, tracking only TRID pattern and building the base TRs as described.
-
-        Parameters
-        ----------
-        *args : SimpleNamespace
-            Events to add as a block (including possible TRID label as a SimpleNamespace).
         """
-        # Check if any argument is a TRID label
         trid = None
         for obj in args:
             if hasattr(obj, "label") and getattr(obj, "label", None) == "TRID":
@@ -96,20 +97,21 @@ class Sequence:
 
         # If TRID > 0 and not already in definitions, start new TRID definition
         if trid is not None and trid > 0:
-            if trid not in self._trid_events:
-                self._trid_events[trid] = []
+            if trid not in self.trid_events:
+                self.trid_events[trid] = []
                 self._current_trid = trid
             else:
-                # If we see a TRID > 0 that is already in the definitions, stop building
                 self._current_trid = None
 
         # Only update definition and add blocks if we are building the first instance
         if self._current_trid is not None:
             if trid is not None:
-                self._trid_events[self._current_trid].append(trid)
+                self.trid_events[self._current_trid].append(trid)
             else:
-                self._trid_events[self._current_trid].append(0)
+                self.trid_events[self._current_trid].append(0)
             self._seq.add_block(*args)
+
+        self._prep_counts += 1
 
     def _add_block_eval(self, *args) -> None:
         """
@@ -118,77 +120,75 @@ class Sequence:
         Also counts the number of ADC events encountered during the dry run.
         Optimized: directly inspects event objects, no sequence/block creation.
         """
-        if not self._trid_events or not self._tr_cursor:
-            raise RuntimeError("Eval mode requires a prior prep step with valid TRID events and cursors.")
+        if not self.trid_events or not self.trid_to_segment_ids:
+            raise RuntimeError(
+                "Eval mode requires a prior prep step with valid TRID events and segment mappings."
+            )
 
-        if not self._eval_trid_list:
-            self._eval_trid_list = list(self._trid_events.keys())
-            self._eval_tr_block_counts = {trid: len(self._trid_events[trid]) for trid in self._trid_events}
+        # First time, preallocate
+        if self._eval_counts == 0:
+            self._eval_trid_list = list(self.trid_events.keys())
+            self._eval_tr_block_counts = {
+                trid: len(self.trid_events[trid]) for trid in self.trid_events
+            }
+            for trid, events in self.trid_events.items():
+                arr = np.zeros((len(events), 8), dtype=float)
+                arr[:, 2] = 1  # default gx sign +
+                arr[:, 4] = 1  # default gy sign +
+                arr[:, 6] = 1  # default gz sign +
+                arr[:, 0] = np.inf  # duration: start with inf, will take min
+                self.eval_stats[trid] = arr
 
         curr_trid = self._eval_trid_list[self._eval_tr_idx]
         trsize = self._eval_tr_block_counts[curr_trid]
-        if curr_trid not in self._eval_stats:
-            arr = np.zeros((trsize, 8), dtype=float)
-            arr[:, 2] = 1  # default gx sign +
-            arr[:, 4] = 1  # default gy sign +
-            arr[:, 6] = 1  # default gz sign +
-            arr[:, 0] = np.inf  # duration: start with inf, will take min
-            self._eval_stats[curr_trid] = arr
-        arr = self._eval_stats[curr_trid]
+        arr = self.eval_stats[curr_trid]
         idx = self._eval_block_idx
-        
+
         rf_amp = 0.0
         gx = 0.0
         gy = 0.0
         gz = 0.0
         duration = 0.0
-        
-        # Each obj is an event: check type and extract info
+
         for obj in args:
-            
-            # Float: interpreted as block duration
             if isinstance(obj, float):
                 duration = max(duration, obj)
                 continue
-            
-            # Event type
-            typ = getattr(obj, 'type', None)
-            
-            # RF event
-            if typ == 'rf':
+            typ = getattr(obj, "type", None)
+            if typ == "rf":
                 rf_amp = np.max(np.abs(obj.signal))
                 duration = max(duration, obj.delay + obj.shape_dur)
-                
-            # Gradient events
-            elif typ == 'trap':
-                if obj.channel == 'x':
+            elif typ == "trap":
+                if obj.channel == "x":
                     gx = obj.amplitude
-                elif obj.channel == 'y':
+                elif obj.channel == "y":
                     gy = obj.amplitude
-                elif obj.channel == 'z':
+                elif obj.channel == "z":
                     gz = obj.amplitude
-                duration = max(duration, obj.delay + obj.rise_time + obj.flat_time + obj.fall_time + obj.fall_time)
-                
-            elif typ == 'grad':
+                duration = max(
+                    duration,
+                    obj.delay
+                    + obj.rise_time
+                    + obj.flat_time
+                    + obj.fall_time
+                    + obj.fall_time,
+                )
+            elif typ == "grad":
                 maxval = np.argmax(np.abs(obj.waveform))
-                if obj.channel == 'x':
+                if obj.channel == "x":
                     gx = obj.waveform[maxval]
-                elif obj.channel == 'y':
+                elif obj.channel == "y":
                     gy = obj.waveform[maxval]
-                elif obj.channel == 'z':
+                elif obj.channel == "z":
                     gz = obj.waveform[maxval]
                 duration = max(duration, obj.delay + obj.shape_dur)
-                
-            # ADC event
-            elif typ == 'adc':
+            elif typ == "adc":
                 self.adc_count += 1
-                if hasattr(obj, 'duration'):
+                if hasattr(obj, "duration"):
                     duration = max(duration, obj.delay + obj.duration)
                 else:
                     duration = max(duration, obj.delay + obj.num_samples * obj.dwell)
-                    
-            # Delay
-            elif typ == 'delay':
+            elif typ == "delay":
                 duration = max(duration, obj.delay)
 
         arr[idx, 0] = min(arr[idx, 0], duration)
@@ -227,18 +227,17 @@ class Sequence:
     def create_segments(self):
         """
         Use the external segment.create_segments wrapper to perform block deduplication, segment splitting, and segment deduplication.
-        Stores the resulting segment library, cursors, and block library as attributes.
+        Stores the resulting segment library, mapping arrays, and block library as attributes.
         """
-        seq = self._seq
         (
-            self._segment_library,
-            self._tr_cursor,
-            self._segment_cursor,
-            self._tr_library,
-            self._block_library,
-        ) = _create_segments(seq, self._trid_events)
-        
-        
+            self.segment_library,
+            self.trid_to_segment_ids,
+            self.trid_to_within_segment_idx,
+            self.trid_definitions,
+            self.block_library,
+        ) = _create_segments(self._seq, self.trid_events)
+
+
 # %% utils
 def _get_block(*args):
     _seq = PyPulseqSequence(system=Opts(max_grad=np.inf, max_slew=np.inf))
