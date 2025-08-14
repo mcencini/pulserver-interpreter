@@ -137,7 +137,7 @@ def mprage():
             - pp.calc_duration(gx)
             - pp.calc_duration(gx_spoil)
         )
-        
+
         for i in range(Ny):
             gy_pre = pp.scale_grad(_gy_pre, phase_areas[i] / _gy_pre.amplitude)
 

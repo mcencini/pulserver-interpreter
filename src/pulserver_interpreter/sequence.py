@@ -1,6 +1,13 @@
+"""Drop-in replacement for pypulseq.Sequence"""
+
+__all__ = ["Sequence"]
+
 import numpy as np
+
 from pypulseq import Opts
 from pypulseq import Sequence as PyPulseqSequence
+
+from .segment import create_segments as _create_segments
 
 
 class Sequence:
@@ -40,9 +47,11 @@ class Sequence:
         self._current_trid = None  # The TRID currently being built
         self._seq = PyPulseqSequence(system=system, use_block_cache=use_block_cache)
         self._trid_events = {}
-        self._segment_library = {}
         self._tr_cursor = {}
         self._segment_cursor = {}
+
+        self._tr_library = {}
+        self._segment_library = {}
         self._block_library = PyPulseqSequence(system=system)
 
     def add_block(self, *args) -> None:
@@ -115,152 +124,22 @@ class Sequence:
     @mode.setter
     def mode(self, value: str):
         if value not in ["prep", "eval", "rt"]:
-            raise ValueError(f"Mode (={value})must be 'prep', 'eval', or 'rt'.")
+            raise ValueError(f"Mode (={value}) must be 'prep', 'eval', or 'rt'.")
         self._mode = value
 
     def create_segments(self):
         """
-        Parse the internal pypulseq sequence libraries, deduplicate events and blocks, and build segment/block mappings.
-        Stores the block segment mapping as a private attribute.
-        Also splits each TR into segments (subarrays between TRID=-1 markers), finds unique segments, and maps segment IDs and block IDs for each TR.
+        Use the external segment.create_segments wrapper to perform block deduplication, segment splitting, and segment deduplication.
+        Stores the resulting segment library, cursors, and block library as attributes.
         """
-
-        # 1) Parse adc and rf libraries
         seq = self._seq
-        if not hasattr(seq, "adc_library") or not seq.adc_library.data:
-            raise RuntimeError(
-                "Internal pypulseq sequence is empty or missing adc_library."
-            )
-
-        # RF: columns 2,3,4,6 (0-based: 1, 2, 3, 5)
-        # (mag_id phase_id time_shape_id delay)
-        rf_mat = np.stack(list(seq.rf_library.data.values()))[:, [1, 2, 3, 5]]
-
-        # Grad library (0-based: type, 1, 2, 3, 4 + 5 for type == 'g')
-        # ('t' rise flat fall delay 0 || 'g' first last amp_shape_id time_shape_id delay)
-        grad_mat = []
-        for n, t in seq.grad_library.type.items():
-            if t == "g":
-                row = [1, *seq.grad_library.data[n][1:6]]
-            elif t == "t":
-                row = [2, *seq.grad_library.data[n][1:5], 0]
-            else:
-                raise ValueError(f"Unknown grad type: {t}")
-            grad_mat.append(row)
-        grad_mat = np.stack(grad_mat)
-
-        # ADC: columns 1,2,3,8 (0-based: 0, 1, 2, 7)
-        # (num dwell delay phase_id)
-        adc_mat = np.stack(list(seq.adc_library.data.values()))[:, [0, 1, 2, 7]]
-
-        # 2) Find unique rows and mapping for each event type
-        _, rf_map = _unique_rows_with_inverse(rf_mat)
-        _, grad_map = _unique_rows_with_inverse(grad_mat)
-        _, adc_map = _unique_rows_with_inverse(adc_mat)
-
-        # Convert map from 0-indexing to 1-indexing and add 0 for empty events
-        rf_map = np.asarray([0, *(rf_map + 1)], dtype=float)
-        grad_map = np.asarray([0, *(grad_map + 1)], dtype=float)
-        adc_map = np.asarray([0, *(adc_map + 1)], dtype=float)
-
-        # 3) Parse block library and remap event IDs
-        block_mat = np.stack(list(seq.block_events.values()))
-        block_mat = block_mat[:, :6]  # Remove extID column
-
-        # block_mat columns: [_, rfID, gxID, gyID, gzID, adcID]
-        # Remap event IDs to unique event indices
-        block_mat[:, 1] = rf_map[block_mat[:, 1]]
-        block_mat[:, 2] = grad_map[block_mat[:, 2]]
-        block_mat[:, 3] = grad_map[block_mat[:, 3]]
-        block_mat[:, 4] = grad_map[block_mat[:, 4]]
-        block_mat[:, 5] = adc_map[block_mat[:, 5]]
-
-        # Find pure delay blocks
-        is_pure_delay = block_mat.sum(axis=1) == 0
-
-        # Get durations and set duration of pure delay blocks to 0
-        durations = np.asarray(list(seq.block_durations.values()), dtype=float)
-        durations[is_pure_delay] = 0.0
-
-        # Convert to float and add duration
-        block_mat = block_mat.astype(float)
-        block_mat[:, 0] = durations
-
-        # Find unique blocks and mapping
-        _, block_lut = _unique_rows_with_inverse(block_mat)
-        block_lut += 1  # switch to 1-based indexing
-
-        # --- Segment splitting and unique segment detection ---
-        # 1. Build a flat list of all block_lut indices for all TRs, and split into TRs
-        trid_events = self._trid_events
-        tr_block_lut_slices = []  # List of np.array, one per TR
-        block_lut_idx = 0
-        for _, trdef in trid_events.items():
-            tr_len = len(trdef)
-            tr_block_lut = block_lut[block_lut_idx : block_lut_idx + tr_len]
-            tr_block_lut_slices.append(tr_block_lut)
-            block_lut_idx += tr_len
-
-        # 2. For each TR, split into segments at TRID=-1 boundaries (segment starts at -1, not after)
-        tr_segments = []  # List of list of np.array (segments per TR)
-        tr_segment_starts = []  # List of list of start indices (per TR)
-        for _, trdef in trid_events.items():
-            tr_blocks = tr_block_lut_slices.pop(0)
-            trdef = np.array(trdef)
-            # Find indices where TRID == -1
-            split_points = np.where(trdef == -1)[0]
-            starts = [0, *split_points.tolist()]
-            ends = [*split_points.tolist(), len(trdef)]
-            segments = [
-                tr_blocks[s:e] for s, e in zip(starts, ends, strict=False) if s < e
-            ]
-            tr_segments.append(segments)
-            tr_segment_starts.append(starts)
-
-        # 3. Collect all segments, assign unique segment IDs (1-based), and build segment dict
-        segment_dict = {}
-        unique_segments = {}
-        segment_counter = 1  # Start at 1 for 1-based segment IDs
-        for seglist in tr_segments:
-            for seg in seglist:
-                seg_tuple = tuple(seg.tolist())
-                if seg_tuple not in segment_dict:
-                    segment_dict[seg_tuple] = segment_counter
-                    unique_segments[segment_counter] = seg_tuple
-                    segment_counter += 1
-
-        # 4. For each TR, build segmentID and within-segment index arrays, store in dicts keyed by TRID
-        tr_segment_ids = {}  # Dict: TRID -> np.array (segment ID for every position)
-        tr_block_ids = (
-            {}
-        )  # Dict: TRID -> np.array (within-segment index for every position)
-        for trid, segs in zip(trid_events.keys(), tr_segments, strict=False):
-            tr_len = sum(len(seg) for seg in segs)
-            seg_id_arr = np.zeros(tr_len, dtype=int)
-            within_seg_idx_arr = np.zeros(tr_len, dtype=int)
-            pos = 0
-            for seg in segs:
-                seg_tuple = tuple(seg.tolist())
-                seg_id = segment_dict[seg_tuple]
-                seg_len = len(seg)
-                seg_id_arr[pos : pos + seg_len] = seg_id
-                within_seg_idx_arr[pos : pos + seg_len] = np.arange(seg_len)
-                pos += seg_len
-            tr_segment_ids[trid] = seg_id_arr
-            tr_block_ids[trid] = within_seg_idx_arr
-
-        # Store results as attributes
-        self._segment_library = (
-            unique_segments  # Dict: segment_id (1-based) -> tuple of block IDs
-        )
-        self._tr_cursor = tr_segment_ids  # Dict: TRID -> np.array, segment IDs per TR (for every position)
-        self._segment_cursor = tr_block_ids  # Dict: TRID -> np.array, within-segment index per TR (for every position)
-
-        # Save unique blocks
-        block_IDs = np.concatenate(list(unique_segments.values()))
-        block_IDs = np.unique(block_IDs)
-        for idx in block_IDs:
-            self._block_library.add_block(seq.get_block(idx))
+        (
+            self._segment_library,
+            self._tr_cursor,
+            self._segment_cursor,
+            self._tr_library,
+            self._block_library,
+        ) = _create_segments(seq, self._trid_events)
 
 
 # %% Local subroutines
