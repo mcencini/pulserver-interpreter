@@ -1,12 +1,12 @@
 """Segment identifications subroutines."""
 
-__all__ = ["create_segments"]
+__all__ = ["build_segments"]
 
 import numpy as np
 from pypulseq import Sequence as PyPulseqSequence
 
 
-def create_segments(
+def build_segments(
     seq: PyPulseqSequence, trid_events: dict | None = None
 ) -> tuple[dict, dict, dict, dict, PyPulseqSequence]:
     """

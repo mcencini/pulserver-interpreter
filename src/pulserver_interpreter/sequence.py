@@ -7,7 +7,7 @@ import numpy as np
 from pypulseq import Opts
 from pypulseq import Sequence as PyPulseqSequence
 
-from .segment import create_segments as _create_segments
+from .segment import build_segments as _build_segments
 
 
 class Sequence:
@@ -224,9 +224,9 @@ class Sequence:
             raise ValueError(f"Mode (={value}) must be 'prep', 'eval', or 'rt'.")
         self._mode = value
 
-    def create_segments(self):
+    def build_segments(self):
         """
-        Use the external segment.create_segments wrapper to perform block deduplication, segment splitting, and segment deduplication.
+        Use the external segment.build_segments wrapper to perform block deduplication, segment splitting, and segment deduplication.
         Stores the resulting segment library, mapping arrays, and block library as attributes.
         """
         (
@@ -235,7 +235,7 @@ class Sequence:
             self.trid_to_within_segment_idx,
             self.trid_definitions,
             self.block_library,
-        ) = _create_segments(self._seq, self.trid_events)
+        ) = _build_segments(self._seq, self.trid_events)
 
 
 # %% utils

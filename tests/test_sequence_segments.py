@@ -8,7 +8,7 @@ from pulserver_interpreter.sequence import Sequence
 def _make_seq(mprage, Nz):
     seq = Sequence()
     seq = mprage(seq)
-    seq.create_segments()
+    seq.build_segments()
     expected = [1, 0, 0] + Nz * [-1, 0, 0, 0, 0] + [-1]
     return seq, expected
 
@@ -75,7 +75,7 @@ def test_create_segments_idempotency(mprage, Nz):
     }
     prev_trid_definitions = dict(seq.trid_definitions)
     prev_block_library_len = len(seq.block_library.block_events)
-    seq.create_segments()
+    seq.build_segments()
     assert seq.segment_library == prev_segment_library
     for k in prev_trid_to_segment_ids:
         assert np.array_equal(seq.trid_to_segment_ids[k], prev_trid_to_segment_ids[k])
