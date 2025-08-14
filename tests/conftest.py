@@ -140,6 +140,7 @@ def mprage():
 
         for i in range(Ny):
             gy_pre = pp.scale_grad(_gy_pre, phase_areas[i] / _gy_pre.amplitude)
+            gy_reph = pp.scale_grad(gy_pre, -1)
 
             seq.add_block(rf_prep, pp.make_label(type="SET", label="TRID", value=1))
             seq.add_block(gx_spoil, gy_spoil, gz_spoil)
@@ -152,7 +153,7 @@ def mprage():
                 seq.add_block(rf, pp.make_label(type="SET", label="TRID", value=-1))
                 seq.add_block(gx_pre, gy_pre, gz_pre)
                 seq.add_block(gx_extended, adc)
-                seq.add_block(gx_spoil_extended, gz_reph)
+                seq.add_block(gx_spoil_extended, gy_reph, gz_reph)
                 seq.add_block(pp.make_delay(delay_TR))
 
             seq.add_block(
