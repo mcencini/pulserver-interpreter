@@ -2,7 +2,6 @@
 
 __all__ = ["Sequence"]
 
-import numpy as np
 
 from pypulseq import Opts
 from pypulseq import Sequence as PyPulseqSequence
@@ -140,40 +139,3 @@ class Sequence:
             self._tr_library,
             self._block_library,
         ) = _create_segments(seq, self._trid_events)
-
-
-# %% Local subroutines
-def _unique(arr, return_index=False, return_inverse=False, return_counts=False):
-
-    sorted_idx = np.lexsort(arr.T)
-    sorted_arr = arr[sorted_idx]
-
-    unique_mask = np.empty(arr.shape[0], dtype=bool)
-    unique_mask[0] = True
-    unique_mask[1:] = np.any(sorted_arr[1:] != sorted_arr[:-1], axis=1)
-    unique_mask_idx = np.where(unique_mask)[0]
-
-    unique_vals = sorted_arr[unique_mask_idx]
-
-    results = [unique_vals]
-
-    if return_index:
-        index = sorted_idx[unique_mask_idx]
-        results.append(index)
-
-    if return_inverse:
-        inverse = np.empty(arr.shape[0], dtype=int)
-        inverse[sorted_idx] = np.cumsum(unique_mask) - 1
-        results.append(inverse)
-
-    if return_counts:
-        counts = np.diff(np.append(unique_mask_idx, arr.shape[0]))
-        results.append(counts)
-
-    return tuple(results) if len(results) > 1 else results[0]
-
-
-def _unique_rows_with_inverse(mat):
-    # Use lexsort-based unique row finder, preserving order of first appearance
-    _, idx, inv = _unique(mat, return_index=True, return_inverse=True)
-    return mat[np.sort(idx)], idx[inv]
