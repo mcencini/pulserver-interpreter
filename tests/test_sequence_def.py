@@ -9,13 +9,20 @@ def test_sequence_definition(mprage, Nz):
 
     # Fill mprage
     seq = mprage(seq)
+    seq.create_segments()
 
     # Assertions for TRID tracking and definitions (dictionary version)
-    assert set(seq.trid_definitions.keys()) == {1}
-    assert len(seq.trid_definitions) == 1
+    assert set(seq._trid_events.keys()) == {1}
+    assert len(seq._trid_events) == 1
     expected = [1, 0, 0] + Nz * [-1, 0, 0, 0, 0] + [-1]
-    assert seq.trid_definitions[1] == expected
+    assert seq._trid_events[1] == expected
 
     # Check that the internal pypulseq sequence only stores the first instance of the TR
     # The number of blocks should match the length of the TRID definition for the first TRID
     assert len(seq._seq.block_events) == len(expected)
+
+    # Check that the number of segments and their definitions are as expected
+    assert set(seq._segment_library.keys()) == {1, 2, 3}
+    assert tuple(seq._segment_library[1]) == (1, 2, 3)
+    assert tuple(seq._segment_library[2]) == (4, 5, 6, 7, 3)
+    assert tuple(seq._segment_library[3]) == (3,)

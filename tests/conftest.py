@@ -67,8 +67,11 @@ def mprage():
         gx_pre = pp.make_trapezoid(
             channel="x", system=system, area=-gx.area / 2, duration=2e-3
         )
-        gy_pre = pp.make_trapezoid(
+        _gy_pre = pp.make_trapezoid(
             channel="y", system=system, area=phase_areas[-1], duration=2e-3
+        )
+        _gz_pre = pp.make_trapezoid(
+            channel="z", system=system, area=slice_areas[-1], duration=2e-3
         )
 
         # =========
@@ -134,23 +137,17 @@ def mprage():
             - pp.calc_duration(gx)
             - pp.calc_duration(gx_spoil)
         )
-
+        
         for i in range(Ny):
-            gy_pre = pp.make_trapezoid(
-                channel="y", system=system, area=phase_areas[i], duration=2e-3
-            )
+            gy_pre = pp.scale_grad(_gy_pre, phase_areas[i] / _gy_pre.amplitude)
 
             seq.add_block(rf_prep, pp.make_label(type="SET", label="TRID", value=1))
             seq.add_block(gx_spoil, gy_spoil, gz_spoil)
             seq.add_block(pp.make_delay(delay_TI))
 
             for j in range(Nz):
-                gz_pre = pp.make_trapezoid(
-                    channel="z", system=system, area=slice_areas[j], duration=2e-3
-                )
-                gz_reph = pp.make_trapezoid(
-                    channel="z", system=system, area=-slice_areas[j], duration=2e-3
-                )
+                gz_pre = pp.scale_grad(_gz_pre, slice_areas[j] / _gz_pre.amplitude)
+                gz_reph = pp.scale_grad(gz_pre, -1)
 
                 seq.add_block(rf, pp.make_label(type="SET", label="TRID", value=-1))
                 seq.add_block(gx_pre, gy_pre, gz_pre)

@@ -37,12 +37,13 @@ class Sequence:
             Whether to use block cache (default: True).
         """
         self._mode = "prep"  # 'prep' or 'eval'
-        self.trid_definitions = (
-            {}
-        )  # Dict: TRID -> list of TRID pattern for first occurrence
         self._current_trid = None  # The TRID currently being built
-        self._block_segment_map = None
         self._seq = PyPulseqSequence(system=system, use_block_cache=use_block_cache)
+        self._trid_events = {}
+        self._segment_library = {}
+        self._tr_cursor = {}
+        self._segment_cursor = {}
+        self._block_library = PyPulseqSequence(system=system)
 
     def add_block(self, *args) -> None:
         """
@@ -78,8 +79,8 @@ class Sequence:
 
         # If TRID > 0 and not already in definitions, start new TRID definition
         if trid is not None and trid > 0:
-            if trid not in self.trid_definitions:
-                self.trid_definitions[trid] = []
+            if trid not in self._trid_events:
+                self._trid_events[trid] = []
                 self._current_trid = trid
             else:
                 # If we see a TRID > 0 that is already in the definitions, stop building
@@ -88,9 +89,9 @@ class Sequence:
         # Only update definition and add blocks if we are building the first instance
         if self._current_trid is not None:
             if trid is not None:
-                self.trid_definitions[self._current_trid].append(trid)
+                self._trid_events[self._current_trid].append(trid)
             else:
-                self.trid_definitions[self._current_trid].append(0)
+                self._trid_events[self._current_trid].append(0)
             self._seq.add_block(*args)
 
     def _add_block_eval(self, *args) -> None:
@@ -121,6 +122,7 @@ class Sequence:
         """
         Parse the internal pypulseq sequence libraries, deduplicate events and blocks, and build segment/block mappings.
         Stores the block segment mapping as a private attribute.
+        Also splits each TR into segments (subarrays between TRID=-1 markers), finds unique segments, and maps segment IDs and block IDs for each TR.
         """
 
         # 1) Parse adc and rf libraries
@@ -136,33 +138,36 @@ class Sequence:
 
         # Grad library (0-based: type, 1, 2, 3, 4 + 5 for type == 'g')
         # ('t' rise flat fall delay 0 || 'g' first last amp_shape_id time_shape_id delay)
-        grad_types = list(seq.grad_library.type.values())
-        grad_data = np.stack(list(seq.grad_library.data.values()))
         grad_mat = []
-        for i, t in enumerate(grad_types):
+        for n, t in seq.grad_library.type.items():
             if t == "g":
-                row = [1, *grad_data[i, [1, 2, 3, 4, 5]].tolist()]
+                row = [1, *seq.grad_library.data[n][1:6]]
             elif t == "t":
-                row = [2, *grad_data[i, [1, 2, 3, 4]].tolist(), 0]
+                row = [2, *seq.grad_library.data[n][1:5], 0]
             else:
                 raise ValueError(f"Unknown grad type: {t}")
             grad_mat.append(row)
-        grad_mat = np.asarray(grad_mat)
+        grad_mat = np.stack(grad_mat)
 
         # ADC: columns 1,2,3,8 (0-based: 0, 1, 2, 7)
         # (num dwell delay phase_id)
         adc_mat = np.stack(list(seq.adc_library.data.values()))[:, [0, 1, 2, 7]]
 
         # 2) Find unique rows and mapping for each event type
-        _, adc_map = _unique_rows_with_inverse(adc_mat)
         _, rf_map = _unique_rows_with_inverse(rf_mat)
         _, grad_map = _unique_rows_with_inverse(grad_mat)
+        _, adc_map = _unique_rows_with_inverse(adc_mat)
+
+        # Convert map from 0-indexing to 1-indexing and add 0 for empty events
+        rf_map = np.asarray([0, *(rf_map + 1)], dtype=float)
+        grad_map = np.asarray([0, *(grad_map + 1)], dtype=float)
+        adc_map = np.asarray([0, *(adc_map + 1)], dtype=float)
 
         # 3) Parse block library and remap event IDs
-        block_mat = np.stack(list(seq.block_library.data.values()))
+        block_mat = np.stack(list(seq.block_events.values()))
         block_mat = block_mat[:, :6]  # Remove extID column
 
-        # block_mat columns: [duration, rfID, gxID, gyID, gzID, adcID]
+        # block_mat columns: [_, rfID, gxID, gyID, gzID, adcID]
         # Remap event IDs to unique event indices
         block_mat[:, 1] = rf_map[block_mat[:, 1]]
         block_mat[:, 2] = grad_map[block_mat[:, 2]]
@@ -170,9 +175,92 @@ class Sequence:
         block_mat[:, 4] = grad_map[block_mat[:, 4]]
         block_mat[:, 5] = adc_map[block_mat[:, 5]]
 
+        # Find pure delay blocks
+        is_pure_delay = block_mat.sum(axis=1) == 0
+
+        # Get durations and set duration of pure delay blocks to 0
+        durations = np.asarray(list(seq.block_durations.values()), dtype=float)
+        durations[is_pure_delay] = 0.0
+
+        # Convert to float and add duration
+        block_mat = block_mat.astype(float)
+        block_mat[:, 0] = durations
+
         # Find unique blocks and mapping
-        _, block_map = _unique_rows_with_inverse(block_mat)
-        self._block_segment_map = block_map
+        _, block_lut = _unique_rows_with_inverse(block_mat)
+        block_lut += 1  # switch to 1-based indexing
+
+        # --- Segment splitting and unique segment detection ---
+        # 1. Build a flat list of all block_lut indices for all TRs, and split into TRs
+        trid_events = self._trid_events
+        tr_block_lut_slices = []  # List of np.array, one per TR
+        block_lut_idx = 0
+        for _, trdef in trid_events.items():
+            tr_len = len(trdef)
+            tr_block_lut = block_lut[block_lut_idx : block_lut_idx + tr_len]
+            tr_block_lut_slices.append(tr_block_lut)
+            block_lut_idx += tr_len
+
+        # 2. For each TR, split into segments at TRID=-1 boundaries (segment starts at -1, not after)
+        tr_segments = []  # List of list of np.array (segments per TR)
+        tr_segment_starts = []  # List of list of start indices (per TR)
+        for _, trdef in trid_events.items():
+            tr_blocks = tr_block_lut_slices.pop(0)
+            trdef = np.array(trdef)
+            # Find indices where TRID == -1
+            split_points = np.where(trdef == -1)[0]
+            starts = [0, *split_points.tolist()]
+            ends = [*split_points.tolist(), len(trdef)]
+            segments = [
+                tr_blocks[s:e] for s, e in zip(starts, ends, strict=False) if s < e
+            ]
+            tr_segments.append(segments)
+            tr_segment_starts.append(starts)
+
+        # 3. Collect all segments, assign unique segment IDs (1-based), and build segment dict
+        segment_dict = {}
+        unique_segments = {}
+        segment_counter = 1  # Start at 1 for 1-based segment IDs
+        for seglist in tr_segments:
+            for seg in seglist:
+                seg_tuple = tuple(seg.tolist())
+                if seg_tuple not in segment_dict:
+                    segment_dict[seg_tuple] = segment_counter
+                    unique_segments[segment_counter] = seg_tuple
+                    segment_counter += 1
+
+        # 4. For each TR, build segmentID and within-segment index arrays, store in dicts keyed by TRID
+        tr_segment_ids = {}  # Dict: TRID -> np.array (segment ID for every position)
+        tr_block_ids = (
+            {}
+        )  # Dict: TRID -> np.array (within-segment index for every position)
+        for trid, segs in zip(trid_events.keys(), tr_segments, strict=False):
+            tr_len = sum(len(seg) for seg in segs)
+            seg_id_arr = np.zeros(tr_len, dtype=int)
+            within_seg_idx_arr = np.zeros(tr_len, dtype=int)
+            pos = 0
+            for seg in segs:
+                seg_tuple = tuple(seg.tolist())
+                seg_id = segment_dict[seg_tuple]
+                seg_len = len(seg)
+                seg_id_arr[pos : pos + seg_len] = seg_id
+                within_seg_idx_arr[pos : pos + seg_len] = np.arange(seg_len)
+                pos += seg_len
+            tr_segment_ids[trid] = seg_id_arr
+            tr_block_ids[trid] = within_seg_idx_arr
+
+        # Store results as attributes
+        self._segment_library = (
+            unique_segments  # Dict: segment_id (1-based) -> tuple of block IDs
+        )
+        self._tr_cursor = tr_segment_ids  # Dict: TRID -> np.array, segment IDs per TR (for every position)
+        self._segment_cursor = tr_block_ids  # Dict: TRID -> np.array, within-segment index per TR (for every position)
+
+        # Save unique blocks
+        block_IDs = np.concatenate(list(unique_segments.values()))
+        block_IDs = np.unique(block_IDs)
+        for idx in block_IDs:
+            self._block_library.add_block(seq.get_block(idx))
 
 
 # %% Local subroutines
@@ -208,5 +296,5 @@ def _unique(arr, return_index=False, return_inverse=False, return_counts=False):
 
 def _unique_rows_with_inverse(mat):
     # Use lexsort-based unique row finder, preserving order of first appearance
-    unique, _, inv = _unique(mat, return_index=True, return_inverse=True)
-    return unique, inv
+    _, idx, inv = _unique(mat, return_index=True, return_inverse=True)
+    return mat[np.sort(idx)], idx[inv]
