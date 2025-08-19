@@ -2,6 +2,7 @@
 
 __all__ = ["Sequence"]
 
+import numpy as np
 
 from pypulseq import Opts
 from pypulseq import Sequence as PyPulseqSequence
@@ -68,6 +69,7 @@ class Sequence:
             {}
         )  # dict: TRID -> first TR instance block labels
         self._current_trid = None
+        self._current_block = 0
         self._within_tr = 0  # position within current TR
 
         # --- Global arrays ---
@@ -85,11 +87,14 @@ class Sequence:
 
         # --- Status flags ---
         self.prepped = False
+        self.evaluated = False
+
+        # --- Initial parameters ---
+        self.initial_tr_status = {}
+        self.adc_count = 0
 
     def add_block(self, *args) -> None:
-        """
-        Add a block to the sequence, dispatching to the appropriate method based on mode.
-        """
+        """Add a block to the sequence, dispatching to the appropriate method based on mode."""
         if self._mode == "prep":
             self._add_block_prep(*args)
         elif self._mode == "eval":
@@ -98,13 +103,12 @@ class Sequence:
             raise ValueError(f"Unknown mode: {self._mode}")
 
     def _add_block_prep(self, *args) -> None:
-        """
-        Add a block in preparation mode, tracking TRID, within-TR index, and first TR instance labels.
-        """
+        """Add a block in preparation mode, tracking TRID, within-TR index, and first TR instance labels."""
         if self.prepped:
             raise ValueError(
-                "Sequence is already prepared. Please call clear() running another preparation pass"
+                "Sequence is already prepared. Please call clear() running another preparation pass."
             )
+
         trid_label = 0
         for obj in args:
             if hasattr(obj, "label") and getattr(obj, "label", None) == "TRID":
@@ -131,10 +135,104 @@ class Sequence:
         self._within_tr += 1
 
     def _add_block_eval(self, *args) -> None:
-        """
-        Placeholder for eval mode.
-        """
-        raise NotImplementedError("Eval mode not implemented yet.")
+        """Add a block in evaluation mode, keeping max rf and gradient amplitudes and minimum duration."""
+        if not self.prepped:
+            raise RuntimeError("Eval mode requires a valid sequence structure.")
+
+        if self.evaluated:
+            raise ValueError(
+                "Sequence is already evaluated. Please call clear() running another evaluation pass."
+            )
+
+        # Default values
+        duration = 0.0
+        rf_amp = 0.0
+        gx_amp = 0.0
+        gy_amp = 0.0
+        gz_amp = 0.0
+        gx_sign = 1
+        gy_sign = 1
+        gz_sign = 1
+
+        # parse duration, rf_amp, grad amplitudes and sign
+        for obj in args:
+            if isinstance(obj, float):
+                duration = max(duration, obj)
+                continue
+            typ = getattr(obj, "type", None)
+            if typ == "rf":
+                rf_amp = np.max(np.abs(obj.signal))
+                duration = max(duration, obj.delay + obj.shape_dur)
+            elif typ == "trap":
+                if obj.channel == "x":
+                    gx_amp = np.abs(obj.amplitude)
+                    gx_sign = np.sign(obj.amplitude)
+                elif obj.channel == "y":
+                    gy_amp = np.abs(obj.amplitude)
+                    gy_sign = np.sign(obj.amplitude)
+                elif obj.channel == "z":
+                    gz_amp = np.abs(obj.amplitude)
+                    gz_sign = np.sign(obj.amplitude)
+                duration = max(
+                    duration,
+                    obj.delay
+                    + obj.rise_time
+                    + obj.flat_time
+                    + obj.fall_time
+                    + obj.fall_time,
+                )
+            elif typ == "grad":
+                maxval = np.argmax(np.abs(obj.waveform))
+                if obj.channel == "x":
+                    gx_amp = np.abs(obj.waveform[maxval])
+                    gx_sign = np.sign(obj.waveform[maxval])
+                elif obj.channel == "y":
+                    gy_amp = np.abs(obj.waveform[maxval])
+                    gy_sign = np.sign(obj.waveform[maxval])
+                elif obj.channel == "z":
+                    gz_amp = np.abs(obj.waveform[maxval])
+                    gz_sign = np.sign(obj.waveform[maxval])
+                duration = max(duration, obj.delay + obj.shape_dur)
+            elif typ == "adc":
+                self.adc_count += 1
+                if hasattr(obj, "duration"):
+                    duration = max(duration, obj.delay + obj.duration)
+                else:
+                    duration = max(duration, obj.delay + obj.num_samples * obj.dwell)
+            elif typ == "delay":
+                duration = max(duration, obj.delay)
+
+        # Get current TR ID
+        trid = self.block_trid[self._current_block]
+        idx = self.block_within_tr[self._current_block]
+
+        # Assign amplitudes
+        self.initial_tr_status[trid][idx, 0] = min(
+            self.initial_tr_status[trid][idx, 0], duration
+        )
+        self.initial_tr_status[trid][idx, 1] = max(
+            self.initial_tr_status[trid][idx, 1], rf_amp
+        )
+        self.initial_tr_status[trid][idx, 2] = max(
+            self.initial_tr_status[trid][idx, 2], gx_amp
+        )
+        self.initial_tr_status[trid][idx, 3] = max(
+            self.initial_tr_status[trid][idx, 3], gy_amp
+        )
+        self.initial_tr_status[trid][idx, 4] = max(
+            self.initial_tr_status[trid][idx, 4], gz_amp
+        )
+
+        # Assign signs
+        if self.gradient_signs[trid][idx, 0] == 0:
+            self.gradient_signs[trid][idx, 0] = gx_sign
+        if self.gradient_signs[trid][idx, 1] == 0:
+            self.gradient_signs[trid][idx, 1] = gy_sign
+        if self.gradient_signs[trid][idx, 2] == 0:
+            self.gradient_signs[trid][idx, 2] = gz_sign
+
+        # Update position
+        self._current_block += 1
 
     @property
     def system(self):
@@ -157,7 +255,7 @@ class Sequence:
         """
         if self.prepped:
             raise ValueError(
-                "Sequence is already prepared. Please call clear() before parsing structure again"
+                "Sequence is already prepared. Please call clear() before parsing structure again."
             )
         (
             self.trs,
@@ -171,4 +269,30 @@ class Sequence:
         ) = _get_seq_structure(
             self._seq, self.first_tr_instances_trid_labels, self.block_trid
         )
+
+        # Preallocate initial TR status
+        self.initial_tr_status = {
+            k: np.zeros((v.blocks.size, 5), dtype=float) for k, v in self.trs.items()
+        }  # (dur, rf, gx, gy, gz)
+        for k in self.initial_tr_status:
+            self.initial_tr_status[k][:, 0] = np.inf
+        self.gradient_signs = {
+            k: np.zeros((v.blocks.size, 3), dtype=int) for k, v in self.trs.items()
+        }  # (x, y, z)
+
         self.prepped = True
+
+    def get_initial_tr_status(self):
+        if not self.prepped:
+            raise RuntimeError("Eval mode requires a valid sequence structure.")
+
+        if self.evaluated:
+            raise ValueError(
+                "Sequence is already evaluated. Please call clear() before parsing initial TR status again."
+            )
+        for k in self.initial_tr_status:
+            self.initial_tr_status[k][:, 2] *= self.gradient_signs[k][:, 0]
+            self.initial_tr_status[k][:, 3] *= self.gradient_signs[k][:, 1]
+            self.initial_tr_status[k][:, 4] *= self.gradient_signs[k][:, 2]
+        self.gradient_signs = None
+        self.evaluated = True
