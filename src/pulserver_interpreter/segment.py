@@ -1,6 +1,6 @@
 """Segment identification and global array population."""
 
-__all__ = ["build_segments"]
+__all__ = ["get_seq_structure"]
 
 from types import SimpleNamespace
 
@@ -9,11 +9,14 @@ import numpy as np
 from pypulseq import Opts
 from pypulseq import Sequence as PyPulseqSequence
 
-def build_segments(
+
+def get_seq_structure(
     seq: PyPulseqSequence,
     first_tr_instances_trid_labels: dict | None = None,
     trid_labels: list | None = None,
-) -> tuple[dict, dict, dict, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[
+    dict, dict, dict, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
+]:
     """
     Build segments, TR definitions, and global arrays efficiently.
 
@@ -37,32 +40,30 @@ def build_segments(
         Array of global block IDs for each block in sequence order.
     """
     trid_labels = np.asarray(trid_labels) if trid_labels is not None else None
-    
+
     # Step 0: autotr not allowed for not
     if trid_labels is None:
         raise RuntimeError("Please provide manual TR definitions")
 
     # Step 1: Deduplicate blocks
     unique_block_ids, block_lut = deduplicate_blocks(seq)
-    
+
     # Store unique blocks in a Sequence object
     dummy_sys = Opts(max_grad=np.inf, max_slew=np.inf)
     unique_blocks = PyPulseqSequence(system=dummy_sys)
-    
+
     for idx in unique_block_ids:
         block = seq.get_block(idx)
         unique_blocks.add_block(block)
-        
+
     # Remap block lut
     block_lut = np.searchsorted(unique_block_ids, block_lut) + 1
-    
+
     if trid_labels is None or np.all(trid_labels == 0):
-        build_block_ids_array = False
         block_id = block_lut.copy()
     else:
-        build_block_ids_array = True
         block_id = None
-        
+
     # Step 2: TR splitting
     if first_tr_instances_trid_labels is None:
         block_lut, first_tr_instances_trid_labels = autotr(block_lut)
@@ -76,43 +77,55 @@ def build_segments(
 
     # Step 4: Deduplicate segments
     segments, trs = deduplicate_segments(segments, trs)
-    
+
     # Step 5: Build global arrays
     # tr starts and tr ids
     trid_labels = trid_labels.copy()
-    trid_labels[trid_labels <= 0] = 0 #  erase segment breaks
-    
+    trid_labels[trid_labels <= 0] = 0  #  erase segment breaks
+
     # Get tr starts
     tr_starts = trid_labels > 0
-    
+
     # Forward fill block  TRID
     block_trid = np.maximum.accumulate(trid_labels)
-    
+
     # Cumulative counter over the sequence
     counter = np.arange(len(block_trid))
-    
+
     # Reset per TR by subtracting the start index of the current TR
     # Use maximum.accumulate on start indices
     start_idx = np.where(tr_starts, np.arange(len(block_trid)), 0)
     start_idx = np.maximum.accumulate(start_idx)
     block_within_tr = counter - start_idx
-    
+
     # segment id
     trid_labels = trid_labels[trid_labels > 0]
-    
+
     # Get length of each segment
     _segment_lengths_dict = {seg_id: len(blocks) for seg_id, blocks in segments.items()}
-    
+
     # Get whole sequence of segment IDs and matching sizes
     _segment_ids = np.concatenate([trs[t].segments for t in trid_labels])
     _segment_lengths = np.array([_segment_lengths_dict[s] for s in _segment_ids])
     block_segment_id = np.repeat(_segment_ids, _segment_lengths)
-    block_within_segment = np.concatenate([np.arange(_segment_lengths_dict[s]) for s in _segment_ids])
+    block_within_segment = np.concatenate(
+        [np.arange(_segment_lengths_dict[s]) for s in _segment_ids]
+    )
 
     # block id
     block_id = np.concatenate([trs[t].blocks for t in trid_labels])
-    
-    return trs, segments, unique_blocks, block_trid, block_within_tr, block_segment_id, block_within_segment, block_id
+
+    return (
+        trs,
+        segments,
+        unique_blocks,
+        block_trid,
+        block_within_tr,
+        block_segment_id,
+        block_within_segment,
+        block_id,
+    )
+
 
 # %% ================= Helper functions ===================
 def deduplicate_blocks(seq: PyPulseqSequence) -> np.ndarray:
@@ -128,7 +141,7 @@ def deduplicate_blocks(seq: PyPulseqSequence) -> np.ndarray:
     -------
     block_lut : np.ndarray
         1D array of unique block IDs (1-based indexing).
-        
+
     """
     # RF: columns 2,3,4,6 (0-based: 1,2,3,5)
     rf_mat = np.stack(list(seq.rf_library.data.values()))[:, [1, 2, 3, 5]]
@@ -172,6 +185,7 @@ def deduplicate_blocks(seq: PyPulseqSequence) -> np.ndarray:
     block_mat[:, 0] = durations
 
     unique_block_id, block_lut = _unique_rows_with_inverse(block_mat)
+
     return unique_block_id + 1, block_lut + 1  # 1-based indexing
 
 
@@ -189,10 +203,10 @@ def autotr(block_lut: np.ndarray) -> dict:
     trid_labels : dict
         TRID labels for each block within the first instance
         of each TR.
-        
+
     """
     raise NotImplementedError("autotr is not yet implemented.")
-    
+
 
 def autoseg(block_lut: np.ndarray, trid_labels: dict) -> tuple[dict, dict]:
     """
@@ -212,9 +226,10 @@ def autoseg(block_lut: np.ndarray, trid_labels: dict) -> tuple[dict, dict]:
         Mapping from segment_id (int) to array of block IDs.
     trs : dict
         Mapping from TRID to list of segment IDs composing that TR in order.
-    
+
     """
     raise NotImplementedError("autoseg is not yet implemented.")
+
 
 def split_segments(block_lut: np.ndarray, trid_labels: dict) -> tuple[dict, dict]:
     """
@@ -235,10 +250,10 @@ def split_segments(block_lut: np.ndarray, trid_labels: dict) -> tuple[dict, dict
         Mapping from segment_id (int) to array of block IDs.
     trs : dict
         Mapping from TRID to a SimpleNamespace with:
-        
+
         - ``segments`` : list of segment IDs composing the TR
         - ``blocks``   : array of block IDs composing the TR in order
-        
+
     """
     segments = {}
     trs = {}
@@ -248,7 +263,7 @@ def split_segments(block_lut: np.ndarray, trid_labels: dict) -> tuple[dict, dict
     for trid, trdef in trid_labels.items():
         trdef = np.array(trdef)
         tr_len = len(trdef)
-        tr_blocks = block_lut[block_ptr:block_ptr + tr_len]
+        tr_blocks = block_lut[block_ptr : block_ptr + tr_len]
         block_ptr += tr_len
 
         # find split points
@@ -265,12 +280,10 @@ def split_segments(block_lut: np.ndarray, trid_labels: dict) -> tuple[dict, dict
             segment_ids.append(segment_counter)
             segment_counter += 1
 
-        trs[trid] = SimpleNamespace(
-            segments=segment_ids,
-            blocks=tr_blocks
-        )
+        trs[trid] = SimpleNamespace(segments=segment_ids, blocks=tr_blocks)
 
     return segments, trs
+
 
 def deduplicate_segments(segments: dict, trs: dict) -> tuple[dict, dict]:
     """
@@ -282,7 +295,7 @@ def deduplicate_segments(segments: dict, trs: dict) -> tuple[dict, dict]:
         Mapping from segment_id (int) to array of block IDs.
     trs : dict
         Mapping from TRID to a SimpleNamespace with:
-        
+
         - ``segments`` : list of segment IDs composing the TR
         - ``blocks``   : array of block IDs composing the TR in order
 
@@ -293,12 +306,12 @@ def deduplicate_segments(segments: dict, trs: dict) -> tuple[dict, dict]:
     updated_trs : dict
         Same structure as input `trs`, but with ``segments`` remapped
         to deduplicated segment IDs.
-        
+
     """
-    segment_dict = {}      # maps tuple(blocks) → new segment_id
-    unique_segments = {}   # new deduplicated segment dictionary
-    seg_remap = {}         # maps old segment_id → new segment_id
-    segment_counter = 0
+    segment_dict = {}  # maps tuple(blocks) → new segment_id
+    unique_segments = {}  # new deduplicated segment dictionary
+    seg_remap = {}  # maps old segment_id → new segment_id
+    segment_counter = 1
 
     # Pass 1: deduplicate segments
     for seg_id, seg_blocks in segments.items():
@@ -316,13 +329,13 @@ def deduplicate_segments(segments: dict, trs: dict) -> tuple[dict, dict]:
     for trid, tr in trs.items():
         new_segment_ids = [seg_remap[sid] for sid in tr.segments]
         updated_trs[trid] = SimpleNamespace(
-            segments=new_segment_ids,
-            blocks=tr.blocks.copy()
+            segments=new_segment_ids, blocks=tr.blocks.copy()
         )
 
     return unique_segments, updated_trs
 
-#%% ==== Utilities ====
+
+# %% ==== Utilities ====
 def _unique(
     arr: np.ndarray,
     return_index: bool = False,

@@ -10,6 +10,7 @@ import pypulseq as pp
 
 Sequence = typing.NewType("Sequence", None)
 
+
 def mprage(seq: Sequence, Ny: int = 256, Nz: int = 256) -> Sequence:
     """
     Demo mprage sequence.

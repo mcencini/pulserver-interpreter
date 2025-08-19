@@ -2,12 +2,11 @@
 
 __all__ = ["Sequence"]
 
-import numpy as np
 
 from pypulseq import Opts
 from pypulseq import Sequence as PyPulseqSequence
 
-from .segment import build_segments as _build_segments
+from .segment import get_seq_structure as _get_seq_structure
 
 
 class Sequence:
@@ -53,17 +52,21 @@ class Sequence:
         """
         self._system = system
         self._use_block_cache = use_block_cache
-        self.reset()
-        
-    def reset(self):
+        self.clear()
+
+    def clear(self):
         """
         Reset internal structure.
         """
         self._mode = "prep"  # 'prep', 'eval', or 'rt'
-        self._seq = PyPulseqSequence(system=self._system, use_block_cache=self._use_block_cache)
+        self._seq = PyPulseqSequence(
+            system=self._system, use_block_cache=self._use_block_cache
+        )
 
         # --- TR/block tracking ---
-        self.first_tr_instances_trid_labels = {}  # dict: TRID -> first TR instance block labels
+        self.first_tr_instances_trid_labels = (
+            {}
+        )  # dict: TRID -> first TR instance block labels
         self._current_trid = None
         self._within_tr = 0  # position within current TR
 
@@ -80,6 +83,9 @@ class Sequence:
         self.segments = None
         self.trs = None
 
+        # --- Status flags ---
+        self.prepped = False
+
     def add_block(self, *args) -> None:
         """
         Add a block to the sequence, dispatching to the appropriate method based on mode.
@@ -95,12 +101,16 @@ class Sequence:
         """
         Add a block in preparation mode, tracking TRID, within-TR index, and first TR instance labels.
         """
+        if self.prepped:
+            raise ValueError(
+                "Sequence is already prepared. Please call clear() running another preparation pass"
+            )
         trid_label = 0
         for obj in args:
             if hasattr(obj, "label") and getattr(obj, "label", None) == "TRID":
                 trid_label = getattr(obj, "value", 0)
                 break
-            
+
         # If TRID > 0 and not already in definitions, start new TRID definition
         if trid_label > 0:
             self._within_tr = 0
@@ -140,11 +150,15 @@ class Sequence:
             raise ValueError(f"Mode (={value}) must be 'prep', 'eval', or 'rt'.")
         self._mode = value
 
-    def build_segments(self):
+    def get_seq_structure(self):
         """
         Use the external segment.build_segments wrapper to perform block deduplication, segment splitting, and segment deduplication.
         Stores the resulting segment library, mapping arrays, and block library as attributes.
         """
+        if self.prepped:
+            raise ValueError(
+                "Sequence is already prepared. Please call clear() before parsing structure again"
+            )
         (
             self.trs,
             self.segments,
@@ -153,5 +167,8 @@ class Sequence:
             self.block_within_tr,
             self.block_segment_id,
             self.block_within_segment,
-            self.block_id
-        ) = _build_segments(self._seq, self.first_tr_instances_trid_labels, self.block_trid)
+            self.block_id,
+        ) = _get_seq_structure(
+            self._seq, self.first_tr_instances_trid_labels, self.block_trid
+        )
+        self.prepped = True

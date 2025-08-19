@@ -4,8 +4,8 @@ import pytest
 
 from pulserver_interpreter.demo import mprage as _mprage
 
-ny = 256
-nz = 256
+ny = 4
+nz = 4
 
 
 @pytest.fixture
