@@ -3,84 +3,82 @@
 import numpy as np
 from pulserver_interpreter.sequence import Sequence
 
+def _make_seq(mprage, Ny, Nz):
+    """
+    Create a Sequence filled with MPRAGE pattern and build segments.
 
-# Helper to create and fill sequence
-def _make_seq(mprage, Nz):
+    Parameters
+    ----------
+    mprage : callable
+        Function that fills a Sequence with MPRAGE blocks.
+    Ny : int
+        Number of phase-encode steps (number of repetitions per TR).
+    Nz : int
+        Number of slices or repetitions in sequence.
+
+    Returns
+    -------
+    seq : Sequence
+        Sequence with segments built.
+    expected_trid : list[int]
+        Expected TRID array per block.
+    """
     seq = Sequence()
     seq = mprage(seq)
     seq.build_segments()
-    expected = [1, 0, 0] + Nz * [-1, 0, 0, 0, 0] + [-1]
-    return seq, expected
+    expected_trid = [1, 0, 0] + Nz * [-1, 0, 0, 0, 0] + [-1]
+    return seq, expected_trid
 
+def test_unique_blocks(mprage, Ny, Nz):
+    seq, _ = _make_seq(mprage, Ny, Nz)
+    unique_blocks = seq.unique_blocks.block_events
 
-def test_trid_events_tracking(mprage, Nz):
-    seq, expected = _make_seq(mprage, Nz)
-    assert set(seq.trid_events.keys()) == {1}
-    assert len(seq.trid_events) == 1
-    assert seq.trid_events[1] == expected
+    # There should be exactly 7 unique blocks
+    assert len(unique_blocks) == 7, f"Expected 9 unique blocks, got {len(unique_blocks)}"
 
+def test_block_id_array(mprage, Ny, Nz):
+    seq, _ = _make_seq(mprage, Ny, Nz)
 
-def test_block_events_count(mprage, Nz):
-    seq, expected = _make_seq(mprage, Nz)
-    assert len(seq._seq.block_events) == len(expected)
+    # Expected repeated pattern per TR
+    pattern = [1,2,3,4,5,6,7,3,3]  # 9 blocks
+    expected_block_ids = pattern * Ny
 
+    assert np.array_equal(seq.block_id, expected_block_ids), "block_id array mismatch"
 
-def test_segment_library_definitions(mprage, Nz):
-    seq, _ = _make_seq(mprage, Nz)
-    assert set(seq.segment_library.keys()) == {1, 2, 3}
-    assert tuple(seq.segment_library[1]) == (1, 2, 3)
-    assert tuple(seq.segment_library[2]) == (4, 5, 6, 7, 3)
-    assert tuple(seq.segment_library[3]) == (3,)
+def test_segments(mprage, Ny, Nz):
+    seq, _ = _make_seq(mprage, Ny, Nz)
 
-
-def test_mapping_arrays_shape(mprage, Nz):
-    seq, expected = _make_seq(mprage, Nz)
-    trid = 1
-    seg_ids = seq.trid_to_segment_ids[trid]
-    within_seg_idx = seq.trid_to_within_segment_idx[trid]
-    assert len(seg_ids) == len(expected)
-    assert len(within_seg_idx) == len(expected)
-
-
-def test_segment_ids_in_library(mprage, Nz):
-    seq, _ = _make_seq(mprage, Nz)
-    trid = 1
-    seg_ids = seq.trid_to_segment_ids[trid]
-    for sid in seg_ids:
-        assert sid in seq.segment_library
-
-
-def test_block_library_consistency(mprage, Nz):
-    seq, _ = _make_seq(mprage, Nz)
-    all_blocks = set()
-    for blocks in seq.segment_library.values():
-        all_blocks.update(blocks)
-    block_lib_blocks = set(range(1, len(seq.block_library.block_events) + 1))
-    assert all_blocks == block_lib_blocks
-
-
-def test_segment_definitions_vs_mapping(mprage, Nz):
-    seq, _ = _make_seq(mprage, Nz)
-    trid = 1
-    seg_ids = seq.trid_to_segment_ids[trid]
-    assert set(seq.trid_definitions[trid]) == set(seg_ids)
-
-
-def test_create_segments_idempotency(mprage, Nz):
-    seq, _ = _make_seq(mprage, Nz)
-    prev_segment_library = dict(seq.segment_library)
-    prev_trid_to_segment_ids = {k: v.copy() for k, v in seq.trid_to_segment_ids.items()}
-    prev_trid_to_within_segment_idx = {
-        k: v.copy() for k, v in seq.trid_to_within_segment_idx.items()
+    # Expected segments
+    expected_segments = {
+        1: (1,2,3),       # Adiabatic inversion
+        2: (4,5,6,7,3),   # Flash segment
+        3: (3,)           # Recovery period
     }
-    prev_trid_definitions = dict(seq.trid_definitions)
-    prev_block_library_len = len(seq.block_library.block_events)
-    seq.build_segments()
-    assert seq.segment_library == prev_segment_library
-    for k in prev_trid_to_segment_ids:
-        assert np.array_equal(seq.trid_to_segment_ids[k], prev_trid_to_segment_ids[k])
-        assert np.array_equal(
-            seq.trid_to_within_segment_idx[k], prev_trid_to_within_segment_idx[k]
-        )
-    assert seq.trid_definitions == prev_trid_definitions
-    assert len(seq.block_library.block_events) == prev_block_library_len
+
+    for seg_id, blocks in expected_segments.items():
+        assert tuple(seq.segments[seg_id]) == blocks, f"Segment {seg_id} mismatch"
+
+def test_block_segment_id_array(mprage, Ny, Nz):
+    seq, _ = _make_seq(mprage, Ny, Nz)
+
+    # Expected repeated pattern of segment IDs
+    pattern = [1,1,1,2,2,2,2,2,3]
+    expected_array = pattern * Ny
+
+    assert np.array_equal(seq.block_segment_id, expected_array), "block_segment_id array mismatch"
+
+def test_trs_segments_unique_blocks_consistency(mprage, Ny, Nz):
+    seq, expected_trid = _make_seq(mprage, Ny, Nz)
+
+    # block_trid should be all ones
+    assert np.all(seq.block_trid == 1), "block_trid array should be all ones"
+
+    # TR definitions (seq.trs) should contain exactly the 3 TRs
+    expected_trs = [1,2,3]
+    assert set(seq.trs.keys()) == set(expected_trs), f"TRs mismatch: {seq.trs.keys()}"
+
+    # Each segment in seq.segments should appear in some TR
+    all_segments = set()
+    for seg_list in seq.trs.values():
+        all_segments.update(seg_list)
+    assert all_segments == set(seq.segments.keys()), "Mismatch between segments and TRs"
