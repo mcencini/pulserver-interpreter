@@ -104,6 +104,8 @@ class Sequence:
         self._total_duration = 0.0
 
         # --- Real Time helpers ---
+        self._start_block = 0
+        self._end_block = np.inf
 
     def clear_buffer(self):
         self._seq = PyPulseqSequence(
@@ -333,15 +335,15 @@ class Sequence:
             self._current_block >= self._start_block
             and self._current_block < self._end_block
         ):
-            args = _harmonize_gradients(*args)
+            args = _harmonize_gradients(self.system, *args)
             self._seq.add_block(*args)
         self._current_block += 1
 
 
 # %% utils
-def _harmonize_gradients(*args):
+def _harmonize_gradients(system, *args):
     dummy_seq = PyPulseqSequence(system=Opts(max_grad=np.inf, max_slew=np.inf))
     dummy_seq.add_block(*args)
     block = dummy_seq.get_block(1)
-    block = __harmonize_gradients__(block)
+    block = __harmonize_gradients__(block, system)
     return _block_to_events(block)
