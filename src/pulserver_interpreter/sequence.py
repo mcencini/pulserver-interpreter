@@ -100,12 +100,24 @@ class Sequence:
         self._n_total_segments = 0
         self._total_duration = 0.0
 
+        # --- Real Time helpers ---
+
+    def clear_buffer(self):
+        self._seq = PyPulseqSequence(
+            system=self._system, use_block_cache=self._use_block_cache
+        )
+        self._current_block = 0
+        self._start_block = 0
+        self._end_block = np.inf
+
     def add_block(self, *args) -> None:
         """Add a block to the sequence, dispatching to the appropriate method based on mode."""
         if self._mode == "prep":
             self._add_block_prep(*args)
         elif self._mode == "eval":
             self._add_block_eval(*args)
+        elif self._mode == "rt":
+            self._add_block_rt(*args)
         else:
             raise ValueError(f"Unknown mode: {self._mode}")
 
@@ -314,3 +326,9 @@ class Sequence:
 
     def _add_block_rt(self, *args):
         """Add a block in real-time mode, keeping max rf and gradient amplitudes and minimum duration."""
+        if (
+            self._current_block > self._start_block
+            and self._current_block < self._end_block
+        ):
+            self._seq.add_block(*args)
+        self._current_block += 1
