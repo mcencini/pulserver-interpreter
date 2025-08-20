@@ -9,6 +9,9 @@ import numpy as np
 from pypulseq import Opts
 from pypulseq import Sequence as PyPulseqSequence
 
+from pypulseq.block_to_events import block_to_events as _block_to_events
+
+from .harmonize_grad import harmonize_gradients as __harmonize_gradients__
 from .segment import get_seq_structure as _get_seq_structure
 
 
@@ -327,8 +330,18 @@ class Sequence:
     def _add_block_rt(self, *args):
         """Add a block in real-time mode, keeping max rf and gradient amplitudes and minimum duration."""
         if (
-            self._current_block > self._start_block
+            self._current_block >= self._start_block
             and self._current_block < self._end_block
         ):
+            args = _harmonize_gradients(*args)
             self._seq.add_block(*args)
         self._current_block += 1
+
+
+# %% utils
+def _harmonize_gradients(*args):
+    dummy_seq = PyPulseqSequence(system=Opts(max_grad=np.inf, max_slew=np.inf))
+    dummy_seq.add_block(*args)
+    block = dummy_seq.get_block(1)
+    block = __harmonize_gradients__(block)
+    return _block_to_events(block)

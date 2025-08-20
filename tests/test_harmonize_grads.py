@@ -13,6 +13,8 @@ from pulserver_interpreter.harmonize_grad import harmonize_gradients
 
 # --- Helper functions using pypulseq ---
 
+sys = Opts(max_grad=np.inf, max_slew=np.inf, grad_raster_time=0.5e-3)
+
 
 def make_trap(channel="x", amplitude=1.0, rise=1e-3, flat=2e-3, fall=1e-3, delay=0.0):
     # Use default Opts, no system limits
@@ -23,7 +25,7 @@ def make_trap(channel="x", amplitude=1.0, rise=1e-3, flat=2e-3, fall=1e-3, delay
         flat_time=flat,
         fall_time=fall,
         delay=delay,
-        system=Opts(max_grad=np.inf, max_slew=np.inf, grad_raster_time=0.5e-3),
+        system=sys,
     )
 
 
@@ -37,18 +39,18 @@ def make_ext_trap(channel="x", times=None, amps=None):
         channel=channel,
         amplitudes=amps,
         times=times,
-        system=Opts(max_grad=np.inf, max_slew=np.inf, grad_raster_time=0.5e-3),
+        system=sys,
     )
 
 
-def make_arb(channel="x", waveform=None, raster=0.5e-3, delay=0.0):
+def make_arb(channel="x", waveform=None, delay=0.0):
     if waveform is None:
         waveform = np.array([0.0, 1.0, 0.0])
     return make_arbitrary_grad(
         channel=channel,
         waveform=waveform,
         delay=delay,
-        system=Opts(max_grad=np.inf, max_slew=np.inf, grad_raster_time=raster),
+        system=sys,
     )
 
 
@@ -94,7 +96,7 @@ def check_block_waveforms(block):
 
 def test_case_1_no_gradients():
     block = SimpleNamespace()
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     # Should exit without adding any gradients
     assert not hasattr(new_block, "gx")
     assert not hasattr(new_block, "gy")
@@ -103,19 +105,19 @@ def test_case_1_no_gradients():
 
 def test_case_2_single_trap():
     block = SimpleNamespace(gx=make_trap(channel="x"))
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
 def test_case_3_single_ext_trap():
     block = SimpleNamespace(gx=make_ext_trap(channel="x"))
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
 def test_case_4_single_arb():
     block = SimpleNamespace(gx=make_arb(channel="x"))
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
@@ -123,7 +125,7 @@ def test_case_5_two_trap_same_timing():
     block = SimpleNamespace(
         gx=make_trap(channel="x"), gy=make_trap(channel="y", amplitude=2.0)
     )
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
@@ -131,7 +133,7 @@ def test_case_6_two_trap_different_timing():
     block = SimpleNamespace(
         gx=make_trap(channel="x", flat=1e-3), gy=make_trap(channel="y", flat=2e-3)
     )
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
@@ -140,7 +142,7 @@ def test_case_7_two_ext_trap_same_raster():
         gx=make_ext_trap(channel="x"),
         gy=make_ext_trap(channel="y", amps=np.array([0.0, 0.5, 0.0])),
     )
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
@@ -149,50 +151,42 @@ def test_case_8_two_ext_trap_different_raster():
         gx=make_ext_trap(channel="x"),
         gy=make_ext_trap(channel="y", times=np.array([0.0, 0.5e-3, 2e-3])),
     )
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
-def test_case_9_two_arb_same_raster():
+def test_case_9_two_arb_raster():
     block = SimpleNamespace(
         gx=make_arb(channel="x"),
         gy=make_arb(channel="y", waveform=np.array([0, 0.5, 0])),
     )
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
-def test_case_10_two_arb_different_raster():
-    block = SimpleNamespace(
-        gx=make_arb(channel="x"), gy=make_arb(channel="y", raster=1e-3)
-    )
-    new_block = harmonize_gradients(block)
-    check_block_waveforms(new_block)
-
-
-def test_case_11_trap_plus_ext_trap():
+def test_case_10_trap_plus_ext_trap():
     block = SimpleNamespace(gx=make_trap(channel="x"), gy=make_ext_trap(channel="y"))
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
-def test_case_12_trap_plus_arb():
+def test_case_11_trap_plus_arb():
     block = SimpleNamespace(gx=make_trap(channel="x"), gy=make_arb(channel="y"))
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
-def test_case_13_ext_trap_plus_arb():
+def test_case_12_ext_trap_plus_arb():
     block = SimpleNamespace(gx=make_ext_trap(channel="x"), gy=make_arb(channel="y"))
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
 
 
-def test_case_14_trap_ext_trap_arb():
+def test_case_13_trap_ext_trap_arb():
     block = SimpleNamespace(
         gx=make_trap(channel="x"),
         gy=make_ext_trap(channel="y"),
         gz=make_arb(channel="z"),
     )
-    new_block = harmonize_gradients(block)
+    new_block = harmonize_gradients(block, sys)
     check_block_waveforms(new_block)
