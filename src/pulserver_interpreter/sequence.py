@@ -2,6 +2,8 @@
 
 __all__ = ["Sequence"]
 
+import datetime
+
 import numpy as np
 
 from pypulseq import Opts
@@ -38,6 +40,7 @@ class Sequence:
         Within-segment index for each block (filled during build_segments).
     block_id : np.ndarray
         Block ID for each block (matching keys in ``unique_blocks``).
+
     """
 
     def __init__(self, system: Opts | None = None, use_block_cache: bool = True):
@@ -91,7 +94,11 @@ class Sequence:
 
         # --- Initial parameters ---
         self.initial_tr_status = {}
+
+        # --- Sequence info ----
         self.adc_count = 0
+        self._n_total_segments = 0
+        self._total_duration = 0.0
 
     def add_block(self, *args) -> None:
         """Add a block to the sequence, dispatching to the appropriate method based on mode."""
@@ -101,6 +108,74 @@ class Sequence:
             self._add_block_eval(*args)
         else:
             raise ValueError(f"Unknown mode: {self._mode}")
+
+    @property
+    def system(self):
+        return self._seq.system
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: str):
+        if value not in ["prep", "eval", "rt"]:
+            raise ValueError(f"Mode (={value}) must be 'prep', 'eval', or 'rt'.")
+        self._mode = value
+
+    @property
+    def total_duration(self):
+        return f"{datetime.timedelta(seconds=self._total_duration)}".split(".")[0]
+
+    def get_seq_structure(self):
+        """
+        Use the external segment.build_segments wrapper to perform block deduplication, segment splitting, and segment deduplication.
+        Stores the resulting segment library, mapping arrays, and block library as attributes.
+        """
+        if self.prepped:
+            raise ValueError(
+                "Sequence is already prepared. Please call clear() before parsing structure again."
+            )
+        (
+            self.trs,
+            self.segments,
+            self.unique_blocks,
+            self.block_trid,
+            self.block_within_tr,
+            self.block_segment_id,
+            self.block_within_segment,
+            self.block_id,
+            self._n_total_segments,
+        ) = _get_seq_structure(
+            self._seq, self.first_tr_instances_trid_labels, self.block_trid
+        )
+
+        # Preallocate initial TR status
+        self.initial_tr_status = {
+            k: np.zeros((v.blocks.size, 5), dtype=float) for k, v in self.trs.items()
+        }  # (dur, rf, gx, gy, gz)
+        for k in self.initial_tr_status:
+            self.initial_tr_status[k][:, 0] = np.inf
+        self.gradient_signs = {
+            k: np.zeros((v.blocks.size, 3), dtype=int) for k, v in self.trs.items()
+        }  # (x, y, z)
+
+        self.prepped = True
+
+    def get_initial_tr_status(self):
+        if not self.prepped:
+            raise RuntimeError("Eval mode requires a valid sequence structure.")
+
+        if self.evaluated:
+            raise ValueError(
+                "Sequence is already evaluated. Please call clear() before parsing initial TR status again."
+            )
+        for k in self.initial_tr_status:
+            self.initial_tr_status[k][:, 2] *= self.gradient_signs[k][:, 0]
+            self.initial_tr_status[k][:, 3] *= self.gradient_signs[k][:, 1]
+            self.initial_tr_status[k][:, 4] *= self.gradient_signs[k][:, 2]
+        self.gradient_signs = None
+        self.evaluated = True
 
     def _add_block_prep(self, *args) -> None:
         """Add a block in preparation mode, tracking TRID, within-TR index, and first TR instance labels."""
@@ -202,6 +277,9 @@ class Sequence:
             elif typ == "delay":
                 duration = max(duration, obj.delay)
 
+        # Update total duration
+        self._total_duration += duration
+
         # Get current TR ID
         trid = self.block_trid[self._current_block]
         idx = self.block_within_tr[self._current_block]
@@ -234,65 +312,5 @@ class Sequence:
         # Update position
         self._current_block += 1
 
-    @property
-    def system(self):
-        return self._seq.system
-
-    @property
-    def mode(self):
-        return self._mode
-
-    @mode.setter
-    def mode(self, value: str):
-        if value not in ["prep", "eval", "rt"]:
-            raise ValueError(f"Mode (={value}) must be 'prep', 'eval', or 'rt'.")
-        self._mode = value
-
-    def get_seq_structure(self):
-        """
-        Use the external segment.build_segments wrapper to perform block deduplication, segment splitting, and segment deduplication.
-        Stores the resulting segment library, mapping arrays, and block library as attributes.
-        """
-        if self.prepped:
-            raise ValueError(
-                "Sequence is already prepared. Please call clear() before parsing structure again."
-            )
-        (
-            self.trs,
-            self.segments,
-            self.unique_blocks,
-            self.block_trid,
-            self.block_within_tr,
-            self.block_segment_id,
-            self.block_within_segment,
-            self.block_id,
-        ) = _get_seq_structure(
-            self._seq, self.first_tr_instances_trid_labels, self.block_trid
-        )
-
-        # Preallocate initial TR status
-        self.initial_tr_status = {
-            k: np.zeros((v.blocks.size, 5), dtype=float) for k, v in self.trs.items()
-        }  # (dur, rf, gx, gy, gz)
-        for k in self.initial_tr_status:
-            self.initial_tr_status[k][:, 0] = np.inf
-        self.gradient_signs = {
-            k: np.zeros((v.blocks.size, 3), dtype=int) for k, v in self.trs.items()
-        }  # (x, y, z)
-
-        self.prepped = True
-
-    def get_initial_tr_status(self):
-        if not self.prepped:
-            raise RuntimeError("Eval mode requires a valid sequence structure.")
-
-        if self.evaluated:
-            raise ValueError(
-                "Sequence is already evaluated. Please call clear() before parsing initial TR status again."
-            )
-        for k in self.initial_tr_status:
-            self.initial_tr_status[k][:, 2] *= self.gradient_signs[k][:, 0]
-            self.initial_tr_status[k][:, 3] *= self.gradient_signs[k][:, 1]
-            self.initial_tr_status[k][:, 4] *= self.gradient_signs[k][:, 2]
-        self.gradient_signs = None
-        self.evaluated = True
+    def _add_block_rt(self, *args):
+        """Add a block in real-time mode, keeping max rf and gradient amplitudes and minimum duration."""

@@ -80,6 +80,7 @@ def get_seq_structure(
 
     # Step 5: Build global arrays
     # tr starts and tr ids
+    n_total_segments = np.sum(trid_labels != 0).item()
     trid_labels = trid_labels.copy()
     trid_labels[trid_labels <= 0] = 0  #  erase segment breaks
 
@@ -124,6 +125,7 @@ def get_seq_structure(
         block_segment_id,
         block_within_segment,
         block_id,
+        n_total_segments,
     )
 
 
