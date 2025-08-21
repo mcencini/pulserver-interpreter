@@ -3,6 +3,7 @@
 __all__ = ["Sequence"]
 
 import datetime
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -14,35 +15,7 @@ from . import segment
 
 
 class Sequence:
-    """
-    Drop-in replacement for pypulseq.Sequence, supporting prep mode, TR/segment tracking.
-
-    Attributes
-    ----------
-    mode : str
-        Current mode of the sequence ('prep', 'eval', or 'rt').
-    seq : PyPulseqSequence
-        Internal PyPulseqSequence instance.
-    first_tr_instances_trid_labels : dict
-        Dictionary of first TR instance labels for each TRID.
-    unique_blocks : dict
-        Dictionary of unique block IDs to block objects.
-    segments : dict
-        Dictionary of segment IDs to tuples of block IDs.
-    trs : dict
-        Dictionary of TR IDs to tuples of segment IDs.
-    block_trid : np.ndarray
-        TR ID for each block in the sequence.
-    block_within_tr : np.ndarray
-        Within-TR index (0..len(TR)-1) for each block.
-    block_segment_id : np.ndarray
-        Segment ID for each block (filled during build_segments).
-    block_within_segment : np.ndarray
-        Within-segment index for each block (filled during build_segments).
-    block_id : np.ndarray
-        Block ID for each block (matching keys in ``unique_blocks``).
-
-    """
+    """Drop-in replacement for pypulseq.Sequence, supporting prep mode, TR/segment tracking."""
 
     def __init__(self, system: Opts | None = None, use_block_cache: bool = True):
         """
@@ -99,6 +72,7 @@ class Sequence:
         # --- Sequence info ----
         self.adc_count = 0
         self.n_total_segments = 0
+        self.duration_cache = {}
         self._total_duration = 0.0
 
         # --- Real Time helpers ---
@@ -113,6 +87,24 @@ class Sequence:
         self.start_block = 0
         self.end_block = np.inf
 
+    @property
+    def system(self):
+        return self.seq.system
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: str):
+        if value not in ["dry", "prep", "eval", "rt"]:
+            raise ValueError(f"Mode (={value}) must be 'dry', 'prep', 'eval', or 'rt'.")
+        self._mode = value
+
+    @property
+    def duration(self):
+        return f"{datetime.timedelta(seconds=self._total_duration)}".split(".")[0]
+
     def add_block(self, *args) -> None:
         """Add a block to the sequence, dispatching to the appropriate method based on mode."""
         if self.mode == "prep":
@@ -123,6 +115,74 @@ class Sequence:
             block.add_block_rt(self, *args)
         else:
             raise ValueError(f"Unknown mode: {self._mode}")
+
+    def check_timing(
+        self, print_errors: bool = False # noqa: ARG002
+    ) -> tuple[bool, list[SimpleNamespace]]:
+        return True, []
+
+    def register_adc_event(self, event: SimpleNamespace) -> int:
+        self.seq.register_adc_event(event)
+
+    def register_control_event(self, event: SimpleNamespace) -> int:
+        self.seq.register_control_event(event)
+
+    def register_grad_event(self, event: SimpleNamespace) -> int | tuple[int, int]:
+        self.seq.register_grad_event(event)
+
+    def register_label_event(self, event: SimpleNamespace) -> int:
+        self.seq.register_label_event(event)
+
+    def register_rf_event(self, event: SimpleNamespace) -> int | list[int]:
+        self.seq.register_rf_event(event)
+
+    def register_rf_shim_event(self, event: SimpleNamespace) -> int:
+        self.seq.register_rf_shim_event(event)
+
+    def register_rotation_event(self, event: SimpleNamespace) -> int:
+        self.seq.register_rotation_event(event)
+
+    def register_soft_delay_event(self, event: SimpleNamespace) -> int:
+        self.seq.register_soft_delay_event(event)
+
+    def paper_plot(
+        self,
+        time_range: tuple[float] = (0, np.inf),
+        line_width: float = 1.2,
+        axes_color: tuple[float] = (0.5, 0.5, 0.5),
+        rf_color: str = "black",
+        gx_color: str = "blue",
+        gy_color: str = "red",
+        gz_color: tuple[float] = (0, 0.5, 0.3),
+        rf_plot: str = "abs",
+    ):
+        pass  # dummy method
+
+    def plot(
+        self,
+        label: str = str(),
+        show_blocks: bool = False,
+        save: bool = False,
+        time_range=(0, np.inf),
+        time_disp: str = "s",
+        grad_disp: str = "kHz/m",
+        plot_now: bool = True,
+    ) -> None:
+        pass  # dummy method
+
+    def set_definition(
+        self, key: str, value: float | int | list | np.ndarray | str | tuple
+    ) -> None:
+        pass  # dummy method
+
+    def write(
+        self,
+        name: str,
+        create_signature: bool = True,
+        remove_duplicates: bool = True,
+        check_timing: bool = True,
+    ) -> str | None:
+        pass  # dummy method
 
     def _get_tr(self, idx):
         tr = self.trs[idx].blocks
@@ -257,24 +317,6 @@ class Sequence:
         if idx is not None:
             return self._get_segment(idx)
         return {idx: self._get_segment(idx) for idx in self.segments}
-
-    @property
-    def system(self):
-        return self.seq.system
-
-    @property
-    def mode(self):
-        return self._mode
-
-    @mode.setter
-    def mode(self, value: str):
-        if value not in ["prep", "eval", "rt"]:
-            raise ValueError(f"Mode (={value}) must be 'prep', 'eval', or 'rt'.")
-        self._mode = value
-
-    @property
-    def total_duration(self):
-        return f"{datetime.timedelta(seconds=self._total_duration)}".split(".")[0]
 
     def get_seq_structure(self):
         """
