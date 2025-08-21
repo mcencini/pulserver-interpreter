@@ -117,33 +117,33 @@ class Sequence:
             raise ValueError(f"Unknown mode: {self._mode}")
 
     def check_timing(
-        self, print_errors: bool = False # noqa: ARG002
+        self, print_errors: bool = False  # noqa: ARG002
     ) -> tuple[bool, list[SimpleNamespace]]:
         return True, []
 
     def register_adc_event(self, event: SimpleNamespace) -> int:
-        self.seq.register_adc_event(event)
+        return self.seq.register_adc_event(event)
 
     def register_control_event(self, event: SimpleNamespace) -> int:
-        self.seq.register_control_event(event)
+        return self.seq.register_control_event(event)
 
     def register_grad_event(self, event: SimpleNamespace) -> int | tuple[int, int]:
-        self.seq.register_grad_event(event)
+        return self.seq.register_grad_event(event)
 
     def register_label_event(self, event: SimpleNamespace) -> int:
-        self.seq.register_label_event(event)
+        return self.seq.register_label_event(event)
 
-    def register_rf_event(self, event: SimpleNamespace) -> int | list[int]:
-        self.seq.register_rf_event(event)
+    def register_rf_event(self, event: SimpleNamespace) -> tuple[int, list[int]]:
+        return self.seq.register_rf_event(event)
 
     def register_rf_shim_event(self, event: SimpleNamespace) -> int:
-        self.seq.register_rf_shim_event(event)
+        return self.seq.register_rf_shim_event(event)
 
     def register_rotation_event(self, event: SimpleNamespace) -> int:
-        self.seq.register_rotation_event(event)
+        return self.seq.register_rotation_event(event)
 
     def register_soft_delay_event(self, event: SimpleNamespace) -> int:
-        self.seq.register_soft_delay_event(event)
+        return self.seq.register_soft_delay_event(event)
 
     def paper_plot(
         self,

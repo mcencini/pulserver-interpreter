@@ -40,6 +40,9 @@ def mprage(seq: Sequence, Ny: int = 256, Nz: int = 256) -> Sequence:
     fov = 256e-3
     fov_z = 256e-3
 
+    # RF spoiling
+    rf_spoiling_inc = 117
+
     # =========
     # RF preparatory, excitation
     # =========
@@ -145,27 +148,74 @@ def mprage(seq: Sequence, Ny: int = 256, Nz: int = 256) -> Sequence:
         - pp.calc_duration(gx_spoil)
     )
 
+    # Prepare delay events
+    wait_TI = pp.make_delay(delay_TI)
+    wait_TR = pp.make_delay(delay_TR)
+    wait_recovery = pp.make_delay(T_recovery)
+
+    # Pre-register objects that do not change while looping
+    result = seq.register_grad_event(gx_spoil)
+    gx_spoil.id = result if isinstance(result, int) else result[0]
+
+    result = seq.register_grad_event(gy_spoil)
+    gy_spoil.id = result if isinstance(result, int) else result[0]
+
+    result = seq.register_grad_event(gz_spoil)
+    gz_spoil.id = result if isinstance(result, int) else result[0]
+
+    result = seq.register_grad_event(gx_pre)
+    gx_pre.id = result if isinstance(result, int) else result[0]
+
+    result = seq.register_grad_event(gx_extended)
+    gx_extended.id = result if isinstance(result, int) else result[0]
+
+    result = seq.register_grad_event(gx_spoil_extended)
+    gx_spoil_extended.id = result if isinstance(result, int) else result[0]
+
+    # Phase of the excitation RF object will change, therefore we only pre-register the shapes
+    rf_prep.id, rf_prep.shape_IDs = seq.register_rf_event(rf_prep)
+    _, rf.shape_IDs = seq.register_rf_event(rf)
+
+    # Labels
+    MAIN_SEQ = pp.make_label(type="SET", label="TRID", value=1)
+    TR_BREAK = pp.make_label(type="SET", label="TRID", value=-1)
+
+    # Get scaling factors
+    phase_scaling = phase_areas / _gy_pre.amplitude
+    slice_scaling = slice_areas / _gy_pre.amplitude
+
     for i in range(Ny):
-        gy_pre = pp.scale_grad(_gy_pre, phase_areas[i] / _gy_pre.amplitude)
+        rf_phase = 0
+        rf_inc = 0
+
+        gy_pre = pp.scale_grad(_gy_pre, phase_scaling[i])
         gy_reph = pp.scale_grad(gy_pre, -1)
 
-        seq.add_block(rf_prep, pp.make_label(type="SET", label="TRID", value=1))
+        # Pre-register PE events that repeat in the inner loop
+        gy_pre.id = seq.register_grad_event(gy_pre)
+        gy_reph.id = seq.register_grad_event(gy_reph)
+
+        seq.add_block(rf_prep, MAIN_SEQ)
         seq.add_block(gx_spoil, gy_spoil, gz_spoil)
-        seq.add_block(pp.make_delay(delay_TI))
+        seq.add_block(wait_TI)
 
         for j in range(Nz):
-            gz_pre = pp.scale_grad(_gz_pre, slice_areas[j] / _gz_pre.amplitude)
+            rf.phase_offset = rf_phase / 180 * math.pi
+            adc.phase_offset = rf_phase / 180 * math.pi
+
+            gz_pre = pp.scale_grad(_gz_pre, slice_scaling[j])
             gz_reph = pp.scale_grad(gz_pre, -1)
 
-            seq.add_block(rf, pp.make_label(type="SET", label="TRID", value=-1))
+            seq.add_block(rf, TR_BREAK)
             seq.add_block(gx_pre, gy_pre, gz_pre)
             seq.add_block(gx_extended, adc)
             seq.add_block(gx_spoil_extended, gy_reph, gz_reph)
-            seq.add_block(pp.make_delay(delay_TR))
+            seq.add_block(wait_TR)
 
-        seq.add_block(
-            pp.make_delay(T_recovery),
-            pp.make_label(type="SET", label="TRID", value=-1),
-        )
+            # update increment
+            rf_inc = np.mod(rf_inc + rf_spoiling_inc, 360.0)
+            rf_phase = np.mod(rf_phase + rf_inc, 360.0)
+
+        seq.add_block(wait_recovery, TR_BREAK)
 
     return seq

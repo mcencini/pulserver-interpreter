@@ -175,6 +175,7 @@ def deduplicate_blocks(seq: PyPulseqSequence) -> np.ndarray:
 
     # Parse block library
     block_mat = np.stack(list(seq.block_events.values()))[:, :6]
+    block_mat[:, 1] = rf_map[block_mat[:, 1]]
     block_mat[:, 2] = grad_map[block_mat[:, 2]]
     block_mat[:, 3] = grad_map[block_mat[:, 3]]
     block_mat[:, 4] = grad_map[block_mat[:, 4]]

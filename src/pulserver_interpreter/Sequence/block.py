@@ -5,7 +5,6 @@ __all__ = ["add_block_eval", "add_block_prep", "add_block_rt"]
 import numpy as np
 
 
-
 def add_block_prep(self, *args) -> None:
     """Add a block in preparation mode, tracking TRID, within-TR index, and first TR instance labels."""
     if self.prepped:

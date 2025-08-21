@@ -36,7 +36,7 @@ def test_unique_blocks(mprage, Nz):
     # There should be exactly 7 unique blocks
     assert (
         len(unique_blocks) == 7
-    ), f"Expected 9 unique blocks, got {len(unique_blocks)}"
+    ), f"Expected 7 unique blocks, got {len(unique_blocks)}"
 
 
 def test_block_id_array(mprage, Ny, Nz):
