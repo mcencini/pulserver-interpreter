@@ -171,13 +171,23 @@ class Sequence:
         }  # (dur, rf, gx, gy, gz)
         for k in self.initial_tr_status:
             self.initial_tr_status[k][:, 0] = np.inf
-        self.gradient_signs = {
+        self.tr_gradient_signs = {
             k: np.zeros((v.blocks.size, 3), dtype=int) for k, v in self.trs.items()
+        }  # (x, y, z)
+
+        # Preallocate initial segment status
+        self.initial_segment_status = {
+            k: np.zeros((v.size, 5), dtype=float) for k, v in self.segments.items()
+        }  # (dur, rf, gx, gy, gz)
+        for k in self.initial_segment_status:
+            self.initial_segment_status[k][:, 0] = np.inf
+        self.segment_gradient_signs = {
+            k: np.zeros((v.size, 3), dtype=int) for k, v in self.segments.items()
         }  # (x, y, z)
 
         self.prepped = True
 
-    def get_initial_tr_status(self):
+    def get_initial_status(self):
         if not self.prepped:
             raise RuntimeError("Eval mode requires a valid sequence structure.")
 
@@ -186,8 +196,13 @@ class Sequence:
                 "Sequence is already evaluated. Please call clear() before parsing initial TR status again."
             )
         for k in self.initial_tr_status:
-            self.initial_tr_status[k][:, 2] *= self.gradient_signs[k][:, 0]
-            self.initial_tr_status[k][:, 3] *= self.gradient_signs[k][:, 1]
-            self.initial_tr_status[k][:, 4] *= self.gradient_signs[k][:, 2]
-        self.gradient_signs = None
+            self.initial_tr_status[k][:, 2] *= self.tr_gradient_signs[k][:, 0]
+            self.initial_tr_status[k][:, 3] *= self.tr_gradient_signs[k][:, 1]
+            self.initial_tr_status[k][:, 4] *= self.tr_gradient_signs[k][:, 2]
+        self.tr_gradient_signs = None
+        for k in self.initial_segment_status:
+            self.initial_segment_status[k][:, 2] *= self.segment_gradient_signs[k][:, 0]
+            self.initial_segment_status[k][:, 3] *= self.segment_gradient_signs[k][:, 1]
+            self.initial_segment_status[k][:, 4] *= self.segment_gradient_signs[k][:, 2]
+        self.segment_gradient_signs = None
         self.evaluated = True

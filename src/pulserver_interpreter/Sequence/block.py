@@ -110,8 +110,8 @@ def add_block_eval(self, *args) -> None:
     self._total_duration += duration
 
     # Get current TR ID
-    trid = self.block_trid[self._current_block]
-    idx = self.block_within_tr[self._current_block]
+    trid = self.block_trid[self.current_block]
+    idx = self.block_within_tr[self.current_block]
 
     # Assign amplitudes
     self.initial_tr_status[trid][idx, 0] = min(
@@ -131,12 +131,41 @@ def add_block_eval(self, *args) -> None:
     )
 
     # Assign signs
-    if self.gradient_signs[trid][idx, 0] == 0:
-        self.gradient_signs[trid][idx, 0] = gx_sign
-    if self.gradient_signs[trid][idx, 1] == 0:
-        self.gradient_signs[trid][idx, 1] = gy_sign
-    if self.gradient_signs[trid][idx, 2] == 0:
-        self.gradient_signs[trid][idx, 2] = gz_sign
+    if self.tr_gradient_signs[trid][idx, 0] == 0:
+        self.tr_gradient_signs[trid][idx, 0] = gx_sign
+    if self.tr_gradient_signs[trid][idx, 1] == 0:
+        self.tr_gradient_signs[trid][idx, 1] = gy_sign
+    if self.tr_gradient_signs[trid][idx, 2] == 0:
+        self.tr_gradient_signs[trid][idx, 2] = gz_sign
+
+    # Get current Segment ID
+    segment_id = self.block_segment_id[self.current_block]
+    idx = self.block_within_segment[self.current_block]
+
+    # Assign amplitudes
+    self.initial_segment_status[segment_id][idx, 0] = min(
+        self.initial_segment_status[segment_id][idx, 0], duration
+    )
+    self.initial_segment_status[segment_id][idx, 1] = max(
+        self.initial_segment_status[segment_id][idx, 1], rf_amp
+    )
+    self.initial_segment_status[segment_id][idx, 2] = max(
+        self.initial_segment_status[segment_id][idx, 2], gx_amp
+    )
+    self.initial_segment_status[segment_id][idx, 3] = max(
+        self.initial_segment_status[segment_id][idx, 3], gy_amp
+    )
+    self.initial_segment_status[segment_id][idx, 4] = max(
+        self.initial_segment_status[segment_id][idx, 4], gz_amp
+    )
+
+    # Assign signs
+    if self.segment_gradient_signs[segment_id][idx, 0] == 0:
+        self.segment_gradient_signs[segment_id][idx, 0] = gx_sign
+    if self.segment_gradient_signs[segment_id][idx, 1] == 0:
+        self.segment_gradient_signs[segment_id][idx, 1] = gy_sign
+    if self.segment_gradient_signs[segment_id][idx, 2] == 0:
+        self.segment_gradient_signs[segment_id][idx, 2] = gz_sign
 
     # Update position
     self.current_block += 1
