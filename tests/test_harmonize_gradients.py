@@ -9,7 +9,7 @@ from pypulseq.make_arbitrary_grad import make_arbitrary_grad
 from pypulseq.opts import Opts
 from pypulseq.calc_duration import calc_duration
 
-from pulserver_interpreter.harmonize_grad import harmonize_gradients
+from pulserver_interpreter import harmonize_gradients
 
 # --- Helper functions using pypulseq ---
 

@@ -103,14 +103,14 @@ def get_seq_structure(
     trid_labels = trid_labels[trid_labels > 0]
 
     # Get length of each segment
-    _segment_lengths_dict = {seg_id: len(blocks) for seg_id, blocks in segments.items()}
+    segment_lengths_dict = {seg_id: len(blocks) for seg_id, blocks in segments.items()}
 
     # Get whole sequence of segment IDs and matching sizes
-    _segment_ids = np.concatenate([trs[t].segments for t in trid_labels])
-    _segment_lengths = np.array([_segment_lengths_dict[s] for s in _segment_ids])
-    block_segment_id = np.repeat(_segment_ids, _segment_lengths)
+    segment_ids = np.concatenate([trs[t].segments for t in trid_labels])
+    segment_lengths = np.array([segment_lengths_dict[s] for s in segment_ids])
+    block_segment_id = np.repeat(segment_ids, segment_lengths)
     block_within_segment = np.concatenate(
-        [np.arange(_segment_lengths_dict[s]) for s in _segment_ids]
+        [np.arange(segment_lengths_dict[s]) for s in segment_ids]
     )
 
     # block id
