@@ -124,6 +124,140 @@ class Sequence:
         else:
             raise ValueError(f"Unknown mode: {self._mode}")
 
+    def _get_tr(self, idx):
+        tr = self.trs[idx].blocks
+        seq = PyPulseqSequence(self.system)
+        init_status = self.initial_tr_status[idx]
+
+        # Fill sequence
+        for block_id in tr:
+            block = self.unique_blocks.get_block(block_id)
+            seq.add_block(block)
+
+        # Set duration, amplitudes and remove extension
+        for n in range(tr.size):
+            seq.block_events[n + 1][0] = init_status[n, 0]
+
+            rf_id = seq.block_events[n + 1][1]
+            if rf_id:
+                tmp = np.asarray(seq.rf_library.data[rf_id])
+                tmp[0] = init_status[n, 1]
+                seq.rf_library.data[rf_id] = tuple(tmp)
+
+            gx_id = seq.block_events[n + 1][2]
+            if gx_id:
+                tmp = np.asarray(seq.grad_library.data[gx_id])
+                tmp[0] = init_status[n, 2]
+                seq.grad_library.data[gx_id] = tuple(tmp)
+
+            gy_id = seq.block_events[n + 1][3]
+            if gy_id:
+                tmp = np.asarray(seq.grad_library.data[gy_id])
+                tmp[0] = init_status[n, 3]
+                seq.grad_library.data[gy_id] = tuple(tmp)
+
+            gz_id = seq.block_events[n + 1][4]
+            if gz_id:
+                tmp = np.asarray(seq.grad_library.data[gz_id])
+                tmp[0] = init_status[n, 4]
+                seq.grad_library.data[gz_id] = tuple(tmp)
+
+            seq.block_events[n + 1][6] = 0
+
+        # Set phase/freq offsets for rf, adc to 0
+        for n in seq.rf_library.data:
+            tmp = np.asarray(seq.rf_library.data[n])
+            tmp[6:10] = 0  # (freq_ppm, phase_ppm, freq_off, phase_off)
+            seq.rf_library.data[n] = tuple(tmp)
+        for n in seq.adc_library.data:
+            tmp = np.asarray(seq.adc_library.data[n])
+            tmp[3:8] = 0  # (freq_ppm, phase_ppm, freq_off, phase_off, phase_mod_id)
+            seq.adc_library.data[n] = tuple(tmp)
+
+        return seq
+
+    def tr(self, idx: int | None = None) -> PyPulseqSequence | dict:
+        """
+        Get desired TR as a PyPulseq sequence.
+
+        Parameters
+        ----------
+        idx : int, optional
+            TR index. If not provided, returns the dicionary
+            containing all TRs. The default is None.
+
+        """
+        if idx is not None:
+            return self._get_tr(idx)
+        return {idx: self._get_tr(idx) for idx in self.trs}
+
+    def _get_segment(self, idx):
+        segment = self.segments[idx]
+        seq = PyPulseqSequence(self.system)
+        init_status = self.initial_segment_status[idx]
+
+        # Fill sequence
+        for block_id in segment:
+            block = self.unique_blocks.get_block(block_id)
+            seq.add_block(block)
+
+        # Set duration, amplitudes and remove extension
+        for n in range(segment.size):
+            seq.block_events[n + 1][0] = init_status[n, 0]
+
+            rf_id = seq.block_events[n + 1][1]
+            if rf_id:
+                tmp = np.asarray(seq.rf_library.data[rf_id])
+                tmp[0] = init_status[n, 1]
+                seq.rf_library.data[rf_id] = tuple(tmp)
+
+            gx_id = seq.block_events[n + 1][2]
+            if gx_id:
+                tmp = np.asarray(seq.grad_library.data[gx_id])
+                tmp[0] = init_status[n, 2]
+                seq.grad_library.data[gx_id] = tuple(tmp)
+
+            gy_id = seq.block_events[n + 1][3]
+            if gy_id:
+                tmp = np.asarray(seq.grad_library.data[gy_id])
+                tmp[0] = init_status[n, 3]
+                seq.grad_library.data[gy_id] = tuple(tmp)
+
+            gz_id = seq.block_events[n + 1][4]
+            if gz_id:
+                tmp = np.asarray(seq.grad_library.data[gz_id])
+                tmp[0] = init_status[n, 4]
+                seq.grad_library.data[gz_id] = tuple(tmp)
+
+            seq.block_events[n + 1][6] = 0
+
+        # Set phase/freq offsets for rf, adc to 0
+        for n in seq.rf_library.data:
+            tmp = np.asarray(seq.rf_library.data[n])
+            tmp[6:10] = 0  # (freq_ppm, phase_ppm, freq_off, phase_off)
+            seq.rf_library.data[n] = tuple(tmp)
+        for n in seq.adc_library.data:
+            tmp = np.asarray(seq.adc_library.data[n])
+            tmp[3:8] = 0  # (freq_ppm, phase_ppm, freq_off, phase_off, phase_mod_id)
+            seq.adc_library.data[n] = tuple(tmp)
+
+        return seq
+
+    def segment(self, idx: int | None = None) -> PyPulseqSequence | dict:
+        """
+        Get desired Segment as a PyPulseq sequence.
+
+        Parameters
+        ----------
+        idx : int, optional
+            Segment index. If not provided, returns the dicionary
+            containing all segments. The default is None.
+
+        """
+        if idx is not None:
+            return self._get_segment(idx)
+        return {idx: self._get_segment(idx) for idx in self.segments}
+
     @property
     def system(self):
         return self.seq.system
