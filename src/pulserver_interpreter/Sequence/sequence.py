@@ -175,6 +175,9 @@ class Sequence:
     ) -> None:
         pass  # dummy method
 
+    def test_report(self) -> str:
+        return ""  # dummy method
+
     def write(
         self,
         name: str,
