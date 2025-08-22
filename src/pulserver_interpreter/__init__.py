@@ -1,15 +1,15 @@
 """Public interface."""
 
-import importlib.metadata
+from importlib import metadata as _metadata
 
 # =========
 # VERSION
 # =========
-__version__ = importlib.metadata.version("pypulseq")
+__version__ = _metadata.version("pulserver_interpreter")
 
 
 # =========
 # PACKAGE-LEVEL IMPORTS
 # =========
-from .Sequence.sequence import Sequence
-from .harmonize_gradients import harmonize_gradients
+from . import demo  # noqa
+from . import pulseq  # noqa

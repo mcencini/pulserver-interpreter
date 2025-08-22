@@ -1,7 +1,8 @@
 """Test suite for harmonize_gradients."""
 
-import numpy as np
 from types import SimpleNamespace
+
+import numpy as np
 
 from pypulseq.make_trapezoid import make_trapezoid
 from pypulseq.make_extended_trapezoid import make_extended_trapezoid
@@ -9,7 +10,7 @@ from pypulseq.make_arbitrary_grad import make_arbitrary_grad
 from pypulseq.opts import Opts
 from pypulseq.calc_duration import calc_duration
 
-from pulserver_interpreter import harmonize_gradients
+from pulserver_interpreter.pulseq import harmonize_gradients
 
 # --- Helper functions using pypulseq ---
 

@@ -1,7 +1,8 @@
 """Test pulserver-interpreter Sequence replacement for pypulseq Sequence."""
 
 import numpy as np
-from pulserver_interpreter import Sequence
+
+from pulserver_interpreter.pulseq import Sequence
 
 
 def _make_seq(mprage, Nz):
