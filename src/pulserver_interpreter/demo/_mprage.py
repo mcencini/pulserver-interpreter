@@ -6,7 +6,11 @@ import math
 import typing
 
 import numpy as np
-import pypulseq as pp
+import pypulseq
+
+from pulserver_interpreter.pulseq import PyPulseq
+
+pp = PyPulseq(pypulseq)
 
 Sequence = typing.NewType("Sequence", None)
 
@@ -184,6 +188,7 @@ def mprage(seq: Sequence, Ny: int = 256, Nz: int = 256) -> Sequence:
     phase_scaling = phase_areas / _gy_pre.amplitude
     slice_scaling = slice_areas / _gy_pre.amplitude
 
+    # Prepare
     for i in range(Ny):
         rf_phase = 0
         rf_inc = 0

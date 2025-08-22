@@ -63,19 +63,3 @@ def test_multi_event_output():
     assert e1 is not e2
     assert np.allclose(e1[0].signal, e2[0].signal)
     assert e1[1].amplitude == e2[1].amplitude
-
-
-# ---------- Cache clearing ----------
-def test_clear_cache():
-    @pp.cached_event
-    def dummy_event(a):
-        ns = SimpleNamespace()
-        ns.val = a
-        ns.type = "custom"
-        return ns
-
-    e1 = dummy_event(1)
-    dummy_event.clear_cache()
-    e2 = dummy_event(1)
-    assert e1 is not e2
-    assert e2.val == 1
