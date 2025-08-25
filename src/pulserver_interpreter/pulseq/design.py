@@ -39,11 +39,11 @@ class PulseqDesign(ABC):
         """
         self.seq = Sequence(system, use_block_cache)
         self.seqID = 1
-        self._mode = "dry"  # 'dry', 'prep', 'rt'
+        self._mode = "dry"  # 'dry', 'prep', 'eval','rt'
         self._singleton = True
         self._range_used = False
         self._outer_iterations = 1
-        self.__auto_clear__ = True
+        self.__standalone__ = True
         self._defaults = defaults
         self._start_block = 0
         self._end_block = np.inf
@@ -59,8 +59,8 @@ class PulseqDesign(ABC):
 
     @mode.setter
     def mode(self, value: str):
-        if value not in ["dry", "prep", "rt"]:
-            raise ValueError(f"Mode (={value}) must be 'dry', 'prep', or 'rt'.")
+        if value not in ["dry", "prep", "eval", "rt"]:
+            raise ValueError(f"Mode (={value}) must be 'dry', 'prep', 'eval', or 'rt'.")
         self.seq._mode = value
         self._mode = value
 
@@ -92,7 +92,7 @@ class PulseqDesign(ABC):
 
         if self.mode == "dry":
             self._singleton = True
-            if self.__auto_clear__:
+            if self.__standalone__:
                 self.seq.clear()
             self.core(*args, **merged_kwargs)
 
@@ -113,18 +113,22 @@ class PulseqDesign(ABC):
 
         if self.mode == "prep":
             self._singleton = False
-            if self.__auto_clear__:
+            if self.__standalone__:
                 self.seq.clear()
             self.seq.mode = "prep"
             self.core(*args, **merged_kwargs)
-            self.seq.get_seq_structure()
+            if self.__standalone__:
+                self.seq.get_seq_structure()
+
+        if self.mode == "eval":
             self.seq.mode = "eval"
             self.core(*args, **merged_kwargs)
-            self.seq.get_initial_status()
+            if self.__standalone__:
+                self.seq.get_initial_status()
 
         if self.mode == "rt":
             self._singleton = False
-            if self.__auto_clear__:
+            if self.__standalone__:
                 self.seq.clear_buffer()
             self.seq.mode = "rt"
             self.core(*args, **kwargs)
@@ -166,7 +170,7 @@ class CompositeDesign:
         # Replace child sequences with shared one
         for n, d in enumerate(self.designs, start=1):
             d.seq = self.seq
-            d.__auto_clear__ = False
+            d.__standalone__ = False
             d.seqID = n
 
     @property
@@ -175,8 +179,8 @@ class CompositeDesign:
 
     @mode.setter
     def mode(self, value: str):
-        if value not in ["dry", "prep", "rt"]:
-            raise ValueError(f"Mode (={value}) must be 'dry', 'prep', or 'rt'.")
+        if value not in ["dry", "prep", "eval", "rt"]:
+            raise ValueError(f"Mode (={value}) must be 'dry', 'prep', 'eval', or 'rt'.")
         for design in self.designs:
             design.mode = value
         self._mode = value
@@ -247,6 +251,12 @@ class CompositeDesign:
         for design in self.designs:
             design_kwargs = kwargs.get(design.__class__.__name__.lower(), {})
             design(**design_kwargs)
+
+        if self.mode == "prep":
+            self.seq.get_seq_structure()
+
+        if self.mode == "eval":
+            self.seq.get_initial_status()
 
         return self.seq
 
