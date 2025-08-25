@@ -153,7 +153,7 @@ def make_composite(Ny, Nz):
 
     # Expected repeated pattern of block IDs per TR
     gre_pattern = (Nz // 2) * [1, 2, 3, 4, 5]  # 5 blocks
-    mprage_pattern = [6, 7, 7, *(Nz * [1, 8, 3, 9, 5]), 5]  # 7 blocks
+    mprage_pattern = [6, 7, 5, *(Nz * [1, 8, 3, 9, 5]), 5]  # 7 blocks
     expected.block_ids = gre_pattern * (Ny // 2) + mprage_pattern * Ny
 
     # Expected segments
