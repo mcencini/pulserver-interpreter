@@ -149,18 +149,18 @@ def make_composite(Ny, Nz):
     expected.trs = [1, 2]
 
     # expected n blocks
-    expected.num_blocks = 10
+    expected.num_blocks = 9
 
     # Expected repeated pattern of block IDs per TR
     gre_pattern = (Nz // 2) * [1, 2, 3, 4, 5]  # 5 blocks
-    mprage_pattern = [1, 2, 3, *(Nz * [4, 5, 6, 7, 3]), 3]  # 7 blocks
+    mprage_pattern = [6, 7, 7, *(Nz * [1, 8, 3, 9, 5]), 5]  # 7 blocks
     expected.block_ids = gre_pattern * (Ny // 2) + mprage_pattern * Ny
 
     # Expected segments
     expected.segments = {
         1: (1, 2, 3, 4, 5),  # Flash segment (GRE)
         2: (6, 7, 5),  # Adiabatic inversion
-        3: (1, 8, 9, 10, 5),  # Flash segment (MPRAGE)
+        3: (1, 8, 3, 9, 5),  # Flash segment (MPRAGE)
         4: (5,),  # Recovery period
     }
 
