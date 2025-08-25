@@ -7,6 +7,56 @@ import numpy as np
 import pytest
 
 from pulserver_interpreter.demo import MPRAGE, GRE
+from pulserver_interpreter.pulseq import concatenate
+
+
+def make_gre(Ny, Nz):
+    """
+    Create a Sequence filled with GRE pattern and build segments.
+
+    Parameters
+    ----------
+    Ny : int
+        Number of phase encoding lines in sequence.
+    Nz : int
+        Number of slices or repetitions in sequence.
+
+    Returns
+    -------
+    seq : Sequence
+        Sequence with segments built.
+    expected_trid : list[int]
+        Expected TRID array per block.
+
+    """
+    gre = GRE()
+    gre.mode = "prep"
+    seq = gre(mtx=(256, Ny, Nz))
+
+    expected = SimpleNamespace()
+
+    # expected TR ID
+    trid = Nz * [1, 0, 0, 0, 0]
+    expected.block_trids = np.ones_like(trid * Ny)
+    expected.trs = [1]
+
+    # expected n blocks
+    expected.num_blocks = 5
+
+    # Expected repeated pattern of block IDs per TR
+    pattern = Nz * [1, 2, 3, 4, 5]  # 5 blocks
+    expected.block_ids = pattern * Ny
+
+    # Expected segments
+    expected.segments = {
+        1: (1, 2, 3, 4, 5),  # Flash segment
+    }
+
+    # Expected repeated pattern of segment IDs per TR
+    pattern = Nz * [1, 1, 1, 1, 1]
+    expected.segment_ids = pattern * Ny
+
+    return seq, expected
 
 
 def make_mprage(Ny, Nz):
@@ -60,9 +110,12 @@ def make_mprage(Ny, Nz):
     return seq, expected
 
 
-def make_gre(Ny, Nz):
+def make_composite(Ny, Nz):
     """
-    Create a Sequence filled with GRE pattern and build segments.
+    Create a Sequence filled with GRE pattern (PI calibration) followed
+    by MPRAGE (main sequence) and build segments.
+
+    Assume that, for PI calibration, Ny == Ny // 2 and Nz == Nz // 2
 
     Parameters
     ----------
@@ -79,55 +132,64 @@ def make_gre(Ny, Nz):
         Expected TRID array per block.
 
     """
-    gre = GRE()
-    gre.mode = "prep"
-    seq = gre(mtx=(256, Ny, Nz))
+    gre = GRE(mtx=(256, Ny // 2, Nz // 2))
+    mprage = MPRAGE()
+    composite_seq = concatenate(gre, mprage)
+    composite_seq.mode = "prep"
+    seq = composite_seq(mprage={"mtx": (256, Ny, Nz)})
 
     expected = SimpleNamespace()
 
     # expected TR ID
-    trid = Nz * [1, 0, 0, 0, 0]
-    expected.block_trids = np.ones_like(trid * Ny)
-    expected.trs = [1]
+    trid_gre = (Nz // 2) * [1, 0, 0, 0, 0]
+    trid_mprage = [2, 0, 0] + Nz * [-1, 0, 0, 0, 0] + [-1]
+    expected.block_trids = np.concatenate(
+        (np.ones_like(trid_gre * (Ny // 2)), 2 * np.ones_like(trid_mprage * Ny))
+    )
+    expected.trs = [1, 2]
 
     # expected n blocks
-    expected.num_blocks = 5
+    expected.num_blocks = 10
 
     # Expected repeated pattern of block IDs per TR
-    pattern = Nz * [1, 2, 3, 4, 5]  # 5 blocks
-    expected.block_ids = pattern * Ny
+    gre_pattern = (Nz // 2) * [1, 2, 3, 4, 5]  # 5 blocks
+    mprage_pattern = [1, 2, 3, *(Nz * [4, 5, 6, 7, 3]), 3]  # 7 blocks
+    expected.block_ids = gre_pattern * (Ny // 2) + mprage_pattern * Ny
 
     # Expected segments
     expected.segments = {
-        1: (1, 2, 3, 4, 5),  # Flash segment
+        1: (1, 2, 3, 4, 5),  # Flash segment (GRE)
+        2: (6, 7, 5),  # Adiabatic inversion
+        3: (1, 8, 9, 10, 5),  # Flash segment (MPRAGE)
+        4: (5,),  # Recovery period
     }
 
     # Expected repeated pattern of segment IDs per TR
-    pattern = Nz * [1, 1, 1, 1, 1]
-    expected.segment_ids = pattern * Ny
+    gre_pattern = (Nz // 2) * [1, 1, 1, 1, 1]
+    mprage_pattern = [2, 2, 2, *(Nz * [3, 3, 3, 3, 3]), 4]
+    expected.block_ids = gre_pattern * (Ny // 2) + mprage_pattern * Ny
 
     return seq, expected
 
 
-@pytest.mark.parametrize("make_func", [make_mprage, make_gre])
+@pytest.mark.parametrize("make_func", [make_gre, make_mprage, make_composite])
 def test_unique_blocks(make_func, Ny, Nz):
     seq, expected = make_func(Ny, Nz)
     unique_blocks = seq.unique_blocks.block_events
 
-    # There should be exactly 7 unique blocks
     assert (
         len(unique_blocks) == expected.num_blocks
     ), f"Expected {expected.num_blocks} unique blocks, got {len(unique_blocks)}"
 
 
-@pytest.mark.parametrize("make_func", [make_mprage, make_gre])
+@pytest.mark.parametrize("make_func", [make_gre, make_mprage, make_composite])
 def test_block_id_array(make_func, Ny, Nz):
     seq, expected = make_func(Ny, Nz)
 
     assert np.array_equal(seq.block_id, expected.block_ids), "block_id array mismatch"
 
 
-@pytest.mark.parametrize("make_func", [make_mprage, make_gre])
+@pytest.mark.parametrize("make_func", [make_gre, make_mprage, make_composite])
 def test_segments(make_func, Ny, Nz):
     seq, expected = make_func(Ny, Nz)
 
@@ -135,7 +197,7 @@ def test_segments(make_func, Ny, Nz):
         assert tuple(seq.segments[seg_id]) == blocks, f"Segment {seg_id} mismatch"
 
 
-@pytest.mark.parametrize("make_func", [make_mprage, make_gre])
+@pytest.mark.parametrize("make_func", [make_gre, make_mprage, make_composite])
 def test_block_segment_id_array(make_func, Ny, Nz):
     seq, expected = make_func(Ny, Nz)
 
@@ -144,7 +206,7 @@ def test_block_segment_id_array(make_func, Ny, Nz):
     ), "block_segment_id array mismatch"
 
 
-@pytest.mark.parametrize("make_func", [make_mprage, make_gre])
+@pytest.mark.parametrize("make_func", [make_gre, make_mprage, make_composite])
 def test_trs_segments_unique_blocks_consistency(make_func, Ny, Nz):
     seq, expected = make_func(Ny, Nz)
 
@@ -153,5 +215,4 @@ def test_trs_segments_unique_blocks_consistency(make_func, Ny, Nz):
         seq.block_trid, expected.block_trids
     ), "block_trid array mismatch"
 
-    # TR definitions (seq.trs) should contain exactly the 3 TRs
     assert set(seq.trs.keys()) == set(expected.trs), f"TRs mismatch: {seq.trs.keys()}"
