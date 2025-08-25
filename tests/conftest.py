@@ -2,8 +2,6 @@
 
 import pytest
 
-from pulserver_interpreter.demo import MPRAGE
-
 ny = 4
 nz = 4
 
@@ -16,8 +14,3 @@ def Ny():
 @pytest.fixture
 def Nz():
     return nz
-
-
-@pytest.fixture
-def mprage():
-    return MPRAGE()

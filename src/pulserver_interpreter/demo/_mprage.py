@@ -39,6 +39,9 @@ class MPRAGE(PulseqDesign):
     flip_angle: float, optional
         Default FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
+    dwell: float, optional
+        Default ADC dwell time in ``[s]``.
+        Default is ``1e-5``.
 
     Parameters
     ----------
@@ -60,6 +63,9 @@ class MPRAGE(PulseqDesign):
     flip_angle: float, optional
         FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
+    dwell: float, optional
+        ADC dwell time in ``[s]``.
+        Default is ``1e-5``.
 
     Returns
     -------
@@ -76,8 +82,9 @@ class MPRAGE(PulseqDesign):
         TR: float = 10e-3,
         T_recovery: float = 1e-3,
         flip_angle: float = 12.0,
+        dwell: float = 1e-5,
     ):
-        return mpragecore(self, fov, mtx, TI, TR, T_recovery, flip_angle)
+        return mpragecore(self, fov, mtx, TI, TR, T_recovery, flip_angle, dwell)
 
 
 def mprage(
@@ -88,6 +95,7 @@ def mprage(
     TR: float = 10e-3,
     T_recovery: float = 1e-3,
     flip_angle: float = 12.0,
+    dwell: float = 1e-5,
 ) -> Sequence:
     """
     Demo mprage sequence.
@@ -114,6 +122,9 @@ def mprage(
     flip_angle: float, optional
         FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
+    dwell: float, optional
+        ADC dwell time in ``[s]``.
+        Default is ``1e-5``.
 
     Returns
     -------
@@ -123,7 +134,7 @@ def mprage(
     """
     mprage_design = MPRAGE(system)
     mprage_design.mode = "rt"
-    return mprage_design(fov, mtx, TI, TR, T_recovery, flip_angle)
+    return mprage_design(fov, mtx, TI, TR, T_recovery, flip_angle, dwell)
 
 
 def mpragecore(
@@ -134,6 +145,7 @@ def mpragecore(
     TR: float = 10e-3,
     T_recovery: float = 1e-3,
     flip_angle: float = 12.0,
+    dwell: float = 1e-5,
 ) -> Sequence:
     """
     Actual mprage design routine.
@@ -154,6 +166,9 @@ def mpragecore(
         Recovery Time in ``[s]``.
     flip_angle: float
         Flip Angle in ``[deg]``.
+    dwell: float, optional
+        ADC dwell time in ``[s]``.
+        Default is ``1e-5``.
 
     """
     # Hardcoded parameters
@@ -190,7 +205,7 @@ def mpragecore(
     # =========
     delta_kx = 1 / fov_x
     kx_width = Nx * delta_kx
-    readout_time = 3.5e-3
+    readout_time = Nx * dwell
     gx = pp.make_trapezoid(
         channel="x", system=system, flat_area=kx_width, flat_time=readout_time
     )

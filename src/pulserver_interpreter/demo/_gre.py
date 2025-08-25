@@ -32,6 +32,9 @@ class GRE(PulseqDesign):
     flip_angle: float, optional
         Default FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
+    dwell: float, optional
+        Default ADC dwell time in ``[s]``.
+        Default is ``1e-5``.
 
     Parameters
     ----------
@@ -47,6 +50,9 @@ class GRE(PulseqDesign):
     flip_angle: float, optional
         FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
+    dwell: float, optional
+        ADC dwell time in ``[s]``.
+        Default is ``1e-5``.
 
     Returns
     -------
@@ -61,8 +67,9 @@ class GRE(PulseqDesign):
         mtx: tuple[int] = (256, 256, 256),
         TR: float = 10e-3,
         flip_angle: float = 12.0,
+        dwell: float = 1e-5,
     ):
-        return grecore(self, fov, mtx, TR, flip_angle)
+        return grecore(self, fov, mtx, TR, flip_angle, dwell)
 
 
 def gre(
@@ -71,6 +78,7 @@ def gre(
     mtx: tuple[int] = (256, 256, 256),
     TR: float = 10e-3,
     flip_angle: float = 12.0,
+    dwell: float = 1e-5,
 ) -> Sequence:
     """
     Demo mprage sequence.
@@ -91,6 +99,9 @@ def gre(
     flip_angle: float, optional
         FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
+    dwell: float, optional
+        ADC dwell time in ``[s]``.
+        Default is ``1e-5``.
 
     Returns
     -------
@@ -100,7 +111,7 @@ def gre(
     """
     gre_design = GRE(system)
     gre_design.mode = "rt"
-    return gre_design(fov, mtx, TR, flip_angle)
+    return gre_design(fov, mtx, TR, flip_angle, dwell)
 
 
 def grecore(
@@ -109,6 +120,7 @@ def grecore(
     mtx: tuple[int] = (256, 256, 256),
     TR: float = 10e-3,
     flip_angle: float = 12.0,
+    dwell: float = 1e-5,
 ) -> Sequence:
     """
     Actual gre design routine.
@@ -125,6 +137,9 @@ def grecore(
         Repetition Time in ``[s]``.
     flip_angle: float
         Flip Angle in ``[deg]``.
+    dwell: float, optional
+        ADC dwell time in ``[s]``.
+        Default is ``1e-5``.
 
     """
     # Hardcoded parameters
@@ -156,7 +171,7 @@ def grecore(
     # =========
     delta_kx = 1 / fov_x
     kx_width = Nx * delta_kx
-    readout_time = 3.5e-3
+    readout_time = Nx * dwell
     gx = pp.make_trapezoid(
         channel="x", system=system, flat_area=kx_width, flat_time=readout_time
     )
@@ -296,7 +311,7 @@ def grecore(
             gz_pre = pp.scale_grad(_gz_pre, slice_scaling[j])
             gz_reph = pp.scale_grad(gz_pre, -1)
 
-            if Nz == 0:
+            if j == 0:
                 seq.add_block(rf, MAIN_SEQ)
             else:
                 seq.add_block(rf, TR_BREAK)
