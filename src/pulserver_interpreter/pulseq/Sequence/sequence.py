@@ -36,7 +36,7 @@ class Sequence:
         """
         Reset internal structure.
         """
-        self._mode = "prep"  # 'prep', 'eval', or 'rt'
+        self._mode = "dry"  # 'dry', 'prep', 'eval', or 'rt'
         self.seq = PyPulseqSequence(
             system=self._system, use_block_cache=self.use_block_cache
         )
@@ -107,7 +107,7 @@ class Sequence:
 
     def add_block(self, *args) -> None:
         """Add a block to the sequence, dispatching to the appropriate method based on mode."""
-        if self.mode == "prep":
+        if self.mode == "dry" or self.mode == "prep":
             block.add_block_prep(self, *args)
         elif self.mode == "eval":
             block.add_block_eval(self, *args)

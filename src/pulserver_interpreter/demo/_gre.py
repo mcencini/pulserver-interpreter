@@ -1,8 +1,7 @@
 """Demo sequence for testing and benchmark."""
 
-__all__ = ["MPRAGE", "mprage"]
+__all__ = ["GRE", "gre"]
 
-import math
 import typing
 
 import numpy as np
@@ -13,9 +12,9 @@ from pulserver_interpreter.pulseq import PulseqDesign
 Sequence = typing.NewType("Sequence", None)
 
 
-class MPRAGE(PulseqDesign):
+class GRE(PulseqDesign):
     """
-    Demo mprage sequence design class.
+    Demo gradient echo sequence design class.
 
     Attributes
     ----------
@@ -27,15 +26,9 @@ class MPRAGE(PulseqDesign):
     mtx: tuple[int], optional
         Default matrix size ``(nx, ny, nz)``.
         Default is ``(256, 256, 256)``.
-    TI: float, optional
-        Default Inversion Time in ``[s]``.
-        Default is ``140e-3``.
     TR: float, optional
         Default FLASH Repetition Time in ``[s]``.
         Default is ``10e-3``.
-    T_recovery: float, optional
-        Default Recovery Time in ``[s]``.
-        Default is ``1e-3``.
     flip_angle: float, optional
         Default FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
@@ -48,15 +41,9 @@ class MPRAGE(PulseqDesign):
     mtx: tuple[int], optional
         Matrix size ``(nx, ny, nz)``.
         Default is ``(256, 256, 256)``.
-    TI: float, optional
-        Inversion Time in ``[s]``.
-        Default is ``140e-3``.
     TR: float, optional
         FLASH Repetition Time in ``[s]``.
-        Default is ``10e-3``.
-    T_recovery: float, optional
-        Recovery Time in ``[s]``.
-        Default is ``1e-3``.
+        Default is ``10e-3``
     flip_angle: float, optional
         FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
@@ -72,21 +59,17 @@ class MPRAGE(PulseqDesign):
         self,
         fov: tuple[float] = (256e-3, 256e-3, 256e-3),
         mtx: tuple[int] = (256, 256, 256),
-        TI: float = 140e-3,
         TR: float = 10e-3,
-        T_recovery: float = 1e-3,
         flip_angle: float = 12.0,
     ):
-        return mpragecore(self, fov, mtx, TI, TR, T_recovery, flip_angle)
+        return grecore(self, fov, mtx, TR, flip_angle)
 
 
-def mprage(
+def gre(
     system: pp.Opts = None,
     fov: tuple[float] = (256e-3, 256e-3, 256e-3),
     mtx: tuple[int] = (256, 256, 256),
-    TI: float = 140e-3,
     TR: float = 10e-3,
-    T_recovery: float = 1e-3,
     flip_angle: float = 12.0,
 ) -> Sequence:
     """
@@ -102,15 +85,9 @@ def mprage(
     mtx: tuple[int], optional
         Matrix size ``(nx, ny, nz)``.
         Default is ``(256, 256, 256)``.
-    TI: float, optional
-        Inversion Time in ``[s]``.
-        Default is ``140e-3``.
     TR: float, optional
         FLASH Repetition Time in ``[s]``.
         Default is ``10e-3``.
-    T_recovery: float, optional
-        Recovery Time in ``[s]``.
-        Default is ``1e-3``.
     flip_angle: float, optional
         FLASH Flip Angle in ``[deg]``.
         Default is ``12.0``.
@@ -121,22 +98,20 @@ def mprage(
         Filled Sequence object.
 
     """
-    mprage_design = MPRAGE(system)
-    mprage_design.mode = "rt"
-    return mprage_design(fov, mtx, TI, TR, T_recovery, flip_angle)
+    gre_design = GRE(system)
+    gre_design.mode = "rt"
+    return gre_design(fov, mtx, TR, flip_angle)
 
 
-def mpragecore(
+def grecore(
     self: PulseqDesign,
     fov: tuple[float] = (256e-3, 256e-3, 256e-3),
     mtx: tuple[int] = (256, 256, 256),
-    TI: float = 140e-3,
     TR: float = 10e-3,
-    T_recovery: float = 1e-3,
     flip_angle: float = 12.0,
 ) -> Sequence:
     """
-    Actual mprage design routine.
+    Actual gre design routine.
 
     This is very close to a standard Pulseq sequence.
 
@@ -146,12 +121,8 @@ def mpragecore(
         Field of view ``(dx, dy, dz)`` in ``[m]``.
     mtx: tuple[int]
         Matrix size ``(nx, ny, nz)``.
-    TI: float
-        Inversion Time in ``[s]``.
     TR: float
         Repetition Time in ``[s]``.
-    T_recovery: float
-        Recovery Time in ``[s]``.
     flip_angle: float
         Flip Angle in ``[deg]``.
 
@@ -178,11 +149,6 @@ def mpragecore(
     flip_exc = np.deg2rad(flip_angle)
     rf = pp.make_block_pulse(
         flip_angle=flip_exc, system=system, duration=250e-6, time_bw_product=4
-    )
-
-    flip_prep = math.pi / 2
-    rf_prep = pp.make_block_pulse(
-        flip_angle=flip_prep, system=system, duration=500e-6, time_bw_product=4
     )
 
     # =========
@@ -268,7 +234,6 @@ def mpragecore(
     # =========
     # Delays
     # =========
-    delay_TI = TI - pp.calc_duration(rf_prep) / 2 - pp.calc_duration(gx_spoil)
     delay_TR = (
         TR
         - pp.calc_duration(rf)
@@ -278,9 +243,7 @@ def mpragecore(
     )
 
     # Prepare delay events
-    wait_TI = pp.make_delay(delay_TI)
     wait_TR = pp.make_delay(delay_TR)
-    wait_recovery = pp.make_delay(T_recovery)
 
     # Pre-register objects that do not change while looping
     result = seq.register_grad_event(gx_spoil)
@@ -302,7 +265,6 @@ def mpragecore(
     gx_spoil_extended.id = result if isinstance(result, int) else result[0]
 
     # Phase of the excitation RF object will change, therefore we only pre-register the shapes
-    rf_prep.id, rf_prep.shape_IDs = seq.register_rf_event(rf_prep)
     _, rf.shape_IDs = seq.register_rf_event(rf)
 
     # Labels
@@ -327,10 +289,6 @@ def mpragecore(
         gy_pre.id = seq.register_grad_event(gy_pre)
         gy_reph.id = seq.register_grad_event(gy_reph)
 
-        seq.add_block(rf_prep, MAIN_SEQ)
-        seq.add_block(gx_spoil, gy_spoil, gz_spoil)
-        seq.add_block(wait_TI)
-
         for j in range(Nz):
             rf.phase_offset = np.deg2rad(rf_phase)
             adc.phase_offset = np.deg2rad(rf_phase)
@@ -338,7 +296,10 @@ def mpragecore(
             gz_pre = pp.scale_grad(_gz_pre, slice_scaling[j])
             gz_reph = pp.scale_grad(gz_pre, -1)
 
-            seq.add_block(rf, TR_BREAK)
+            if Nz == 0:
+                seq.add_block(rf, MAIN_SEQ)
+            else:
+                seq.add_block(rf, TR_BREAK)
             seq.add_block(gx_pre, gy_pre, gz_pre)
             seq.add_block(gx_extended, adc)
             seq.add_block(gx_spoil_extended, gy_reph, gz_reph)
@@ -347,7 +308,5 @@ def mpragecore(
             # update increment
             rf_inc = np.mod(rf_inc + rf_spoiling_inc, 360.0)
             rf_phase = np.mod(rf_phase + rf_inc, 360.0)
-
-        seq.add_block(wait_recovery, TR_BREAK)
 
     return seq

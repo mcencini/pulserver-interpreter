@@ -2,6 +2,7 @@
 
 __all__ = ["add_block_eval", "add_block_prep", "add_block_rt"]
 
+
 import numpy as np
 
 from pypulseq import calc_duration
@@ -15,7 +16,6 @@ def add_block_prep(self, *args) -> None:
         )
 
     trid_label = 0
-    duration = calc_duration(*args)
     for obj in args:
         if hasattr(obj, "label") and getattr(obj, "label", None) == "TRID":
             trid_label = getattr(obj, "value", 0)
@@ -35,10 +35,9 @@ def add_block_prep(self, *args) -> None:
         self.first_tr_instances_trid_labels[self.current_trid].append(trid_label)
         self.seq.add_block(*args)
 
-    # Update total duration
-    self._total_duration += duration
-
     # Update global arrays for every block
+    self._total_duration += calc_duration(*args)
+    self.n_total_segments += trid_label != 0
     self.block_trid.append(trid_label)
     self.block_within_tr.append(self.within_tr)
     self.within_tr += 1

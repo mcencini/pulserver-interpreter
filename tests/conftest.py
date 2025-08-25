@@ -2,7 +2,7 @@
 
 import pytest
 
-from pulserver_interpreter.demo import mprage as _mprage
+from pulserver_interpreter.demo import MPRAGE
 
 ny = 4
 nz = 4
@@ -20,11 +20,4 @@ def Nz():
 
 @pytest.fixture
 def mprage():
-    def fill_mprage_seq(seq):
-        """
-        Fill the given pulserver Sequence object with an MPRAGE-like loop using base_blocks.
-        This function is agnostic to the mode of the Sequence (prep/eval).
-        """
-        return _mprage(seq, ny, nz)
-
-    return fill_mprage_seq
+    return MPRAGE()

@@ -2,10 +2,8 @@
 
 import numpy as np
 
-from pulserver_interpreter.pulseq import Sequence
 
-
-def _make_seq(mprage, Nz):
+def _make_seq(mprage, Ny, Nz):
     """
     Create a Sequence filled with MPRAGE pattern and build segments.
 
@@ -13,6 +11,8 @@ def _make_seq(mprage, Nz):
     ----------
     mprage : callable
         Function that fills a Sequence with MPRAGE blocks.
+    Ny : int
+        Number of phase encoding lines in sequence.
     Nz : int
         Number of slices or repetitions in sequence.
 
@@ -23,15 +23,14 @@ def _make_seq(mprage, Nz):
     expected_trid : list[int]
         Expected TRID array per block.
     """
-    seq = Sequence()
-    seq = mprage(seq)
-    seq.get_seq_structure()
+    mprage.mode = "prep"
+    seq = mprage(mtx=(256, Ny, Nz))
     expected_trid = [1, 0, 0] + Nz * [-1, 0, 0, 0, 0] + [-1]
     return seq, expected_trid
 
 
-def test_unique_blocks(mprage, Nz):
-    seq, _ = _make_seq(mprage, Nz)
+def test_unique_blocks(mprage, Ny, Nz):
+    seq, _ = _make_seq(mprage, Ny, Nz)
     unique_blocks = seq.unique_blocks.block_events
 
     # There should be exactly 7 unique blocks
@@ -41,7 +40,7 @@ def test_unique_blocks(mprage, Nz):
 
 
 def test_block_id_array(mprage, Ny, Nz):
-    seq, _ = _make_seq(mprage, Nz)
+    seq, _ = _make_seq(mprage, Ny, Nz)
 
     # Expected repeated pattern per TR
     pattern = [1, 2, 3, *(Nz * [4, 5, 6, 7, 3]), 3]  # 7 blocks
@@ -50,8 +49,8 @@ def test_block_id_array(mprage, Ny, Nz):
     assert np.array_equal(seq.block_id, expected_block_ids), "block_id array mismatch"
 
 
-def test_segments(mprage, Nz):
-    seq, _ = _make_seq(mprage, Nz)
+def test_segments(mprage, Ny, Nz):
+    seq, _ = _make_seq(mprage, Ny, Nz)
 
     # Expected segments
     expected_segments = {
@@ -65,7 +64,7 @@ def test_segments(mprage, Nz):
 
 
 def test_block_segment_id_array(mprage, Ny, Nz):
-    seq, _ = _make_seq(mprage, Nz)
+    seq, _ = _make_seq(mprage, Ny, Nz)
 
     # Expected repeated pattern of segment IDs
     pattern = [1, 1, 1, *(Nz * [2, 2, 2, 2, 2]), 3]
@@ -76,8 +75,8 @@ def test_block_segment_id_array(mprage, Ny, Nz):
     ), "block_segment_id array mismatch"
 
 
-def test_trs_segments_unique_blocks_consistency(mprage, Nz):
-    seq, expected_trid = _make_seq(mprage, Nz)
+def test_trs_segments_unique_blocks_consistency(mprage, Ny, Nz):
+    seq, expected_trid = _make_seq(mprage, Ny, Nz)
 
     # block_trid should be all ones
     assert np.all(seq.block_trid == 1), "block_trid array should be all ones"

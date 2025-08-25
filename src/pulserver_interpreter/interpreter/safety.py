@@ -56,7 +56,7 @@ def rf_params(rf: SimpleNamespace, system: Opts = None) -> SimpleNamespace:
 
     # Flip angle
     flip_angle = 2 * math.pi * waveform_peak * area * duration
-    flip_angle = np.rad2deg(flip_angle)
+    flip_angle = np.rad2deg(abs(flip_angle))
 
     # Absolute width
     abswidth = np.sum(waveform_abs_sum_norm * dt) / duration
