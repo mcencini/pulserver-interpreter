@@ -167,7 +167,7 @@ def make_composite(Ny, Nz):
     # Expected repeated pattern of segment IDs per TR
     gre_pattern = (Nz // 2) * [1, 1, 1, 1, 1]
     mprage_pattern = [2, 2, 2, *(Nz * [3, 3, 3, 3, 3]), 4]
-    expected.block_ids = gre_pattern * (Ny // 2) + mprage_pattern * Ny
+    expected.segment_ids = gre_pattern * (Ny // 2) + mprage_pattern * Ny
 
     return seq, expected
 

@@ -289,8 +289,8 @@ def grecore(
     TR_BREAK = pp.make_label(type="SET", label="TRID", value=-1)
 
     # Get scaling factors
-    phase_scaling = phase_areas / _gy_pre.amplitude
-    slice_scaling = slice_areas / _gy_pre.amplitude
+    phase_scaling = phase_areas / (_gy_pre.amplitude + 1e-12)
+    slice_scaling = slice_areas / (_gz_pre.amplitude + 1e-12)
 
     # Prepare
     for i in self.range(Ny):  # Standard Pulseq: for i in range(Ny)
