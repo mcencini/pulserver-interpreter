@@ -176,7 +176,8 @@ def mpragecore(
     gamma = 42.576e6
 
     # Initialize sequence
-    seq = self.seq  # Standard Pulseq: seq = pp.Sequence()
+    seq = self.seq   # Standard Pulseq: seq = pp.Sequence()
+    prot = self.mrd  # Sidecar MRD object
 
     # get system
     system = seq.system
@@ -186,6 +187,30 @@ def mpragecore(
 
     # Field of view
     fov_x, fov_y, fov_z = fov
+    
+    # ================ Set MRD protocol ==================
+    prot.set_encoding(self.seqID)
+    
+    # save resonance fequency
+    prot.set_h1_frequency(seq.system.B0)
+    
+    # spatial encoding
+    prot.set_trajectory('cartesian')
+    prot.set_fov(size=list(fov), osf=(1.0, 1.0, 1.0))
+    prot.set_mtx(size=list(mtx), osf=(1.0, 1.0, 1.0))
+    prot.set_kspace(axis='k0', min=0, max=Nx, center=None)
+    prot.set_kspace(axis='k1', min=0, max=Ny, center=None)
+    prot.set_kspace(axis='k2', min=0, max=Nz, center=None)
+    prot.set_user_param('SliceThickness', float(fov_z / Nz))
+    
+    # contrast encoding
+    prot.set_flip_angle_deg(flip_angle)
+    # prot.set_echo_time(TE)
+    prot.set_repetition_time(TR)
+    prot.set_inversion_time(TI)
+    prot.set_user_params('flipAn')
+    
+    
 
     # =========
     # RF preparatory, excitation
@@ -358,6 +383,9 @@ def mpragecore(
             seq.add_block(gx_extended, adc)
             seq.add_block(gx_spoil_extended, gy_reph, gz_reph)
             seq.add_block(wait_TR)
+            
+            # update header
+            prot.append_acquisition(k1=i, k2=j)
 
             # update increment
             rf_inc = np.mod(rf_inc + rf_spoiling_inc, 360.0)
