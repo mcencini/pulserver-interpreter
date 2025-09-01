@@ -9,7 +9,7 @@ import numpy as np
 
 from pypulseq import Opts
 
-from ..mrd.builder import ISMRMRDBuilder 
+from ..mrd.builder import ISMRMRDBuilder
 
 from .Sequence.sequence import Sequence
 
@@ -45,7 +45,7 @@ class PulseqDesign(ABC):
         self.seqID = 1
         self._start_block = 0
         self._end_block = np.inf
-        
+
         self._singleton = True
         self._range_used = False
         self._outer_iterations = 1
@@ -178,7 +178,7 @@ class CompositeDesign:
             d.seq = self.seq
             d.__standalone__ = False
             d.seqID = n
-            
+
         self._start_block = 0
         self._end_block = np.inf
 

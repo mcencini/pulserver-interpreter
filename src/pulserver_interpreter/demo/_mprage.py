@@ -179,7 +179,7 @@ def mpragecore(
     gamma = 42.576e6
 
     # Initialize sequence
-    seq = self.seq   # Standard Pulseq: seq = pp.Sequence()
+    seq = self.seq  # Standard Pulseq: seq = pp.Sequence()
 
     # get system
     system = seq.system
@@ -189,23 +189,23 @@ def mpragecore(
 
     # Field of view
     fov_x, fov_y, fov_z = fov
-    
+
     # ================ Set definitions ===================
-    seq.set_definition('Name', self.name)
-    seq.set_definition('FOV', *fov)
-    seq.set_definition('matrix', *mtx)
-    seq.set_definition('encoding', 'k0', Nx)
-    seq.set_definition('encoding', 'k1', Ny)
-    seq.set_definition('encoding', 'k2', Nz)
-    seq.set_definition('TI', TI)
-    seq.set_definition('TR', TR)
-    seq.set_definition('RecoveryTime', T_recovery)
-    seq.set_definition('PhaseInc', rf_spoiling_inc)
-    
+    seq.set_definition("Name", self.name)
+    seq.set_definition("FOV", *fov)
+    seq.set_definition("matrix", *mtx)
+    seq.set_definition("encoding", "k0", Nx)
+    seq.set_definition("encoding", "k1", Ny)
+    seq.set_definition("encoding", "k2", Nz)
+    seq.set_definition("TI", TI)
+    seq.set_definition("TR", TR)
+    seq.set_definition("RecoveryTime", T_recovery)
+    seq.set_definition("PhaseInc", rf_spoiling_inc)
+
     # seq.set_encoding('IMA') # for self-calibrated PI
     # seq.set_definition('FOV', *cal_fov) # FOV for calibration region
     # ...
-    
+
     # =========
     # RF preparatory, excitation
     # =========
@@ -247,12 +247,12 @@ def mpragecore(
     _gz_pre = pp.make_trapezoid(
         channel="z", system=system, area=slice_areas[-1], duration=2e-3
     )
-    
+
     # =========
     # K-space trajectory
     # =========
-    adc = calc_trajectory((gx_pre,), (gx, adc)) 
-    # adc = calc_trajectory((gread, adc)) # result is adc if gread is a single wave, [adc] of len = nwave if multiwave 
+    adc = calc_trajectory((gx_pre,), (gx, adc))
+    # adc = calc_trajectory((gread, adc)) # result is adc if gread is a single wave, [adc] of len = nwave if multiwave
 
     # =========
     # Spoilers
@@ -359,9 +359,9 @@ def mpragecore(
     for i in self.range(Ny):  # Standard Pulseq: for i in range(Ny)
         rf_phase = 0
         rf_inc = 0
-        
+
         # prepare label
-        ylabel = pp_make_label(type='SET', label='LIN', value=i)
+        ylabel = pp_make_label(type="SET", label="LIN", value=i)
 
         gy_pre = pp.scale_grad(_gy_pre, phase_scaling[i])
         gy_reph = pp.scale_grad(gy_pre, -1)
@@ -377,10 +377,10 @@ def mpragecore(
         for j in range(Nz):
             rf.phase_offset = np.deg2rad(rf_phase)
             adc.phase_offset = np.deg2rad(rf_phase)
-            
+
             # prepare label
-            zlabel = pp_make_label(type='SET', label='PAR', value=j)
-        
+            zlabel = pp_make_label(type="SET", label="PAR", value=j)
+
             gz_pre = pp.scale_grad(_gz_pre, slice_scaling[j])
             gz_reph = pp.scale_grad(gz_pre, -1)
 
@@ -389,7 +389,7 @@ def mpragecore(
             seq.add_block(gx_extended, adc, ylabel, zlabel)
             seq.add_block(gx_spoil_extended, gy_reph, gz_reph)
             seq.add_block(wait_TR)
-            
+
             # update increment
             rf_inc = np.mod(rf_inc + rf_spoiling_inc, 360.0)
             rf_phase = np.mod(rf_phase + rf_inc, 360.0)
