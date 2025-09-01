@@ -9,6 +9,8 @@ import numpy as np
 
 from pypulseq import Opts
 
+from ..mrd.builder import ISMRMRDBuilder 
+
 from .Sequence.sequence import Sequence
 
 
@@ -37,16 +39,18 @@ class PulseqDesign(ABC):
             Default arguments for the core method.
 
         """
+        self._mode = "static"  # 'dry', 'prep', 'eval', 'rt', static'
         self.seq = Sequence(system, use_block_cache)
+        self.seq.prot = ISMRMRDBuilder(self._mode)
         self.seqID = 1
-        self._mode = "dry"  # 'dry', 'prep', 'eval','rt'
+        self._start_block = 0
+        self._end_block = np.inf
+        
         self._singleton = True
         self._range_used = False
         self._outer_iterations = 1
         self.__standalone__ = True
         self._defaults = defaults
-        self._start_block = 0
-        self._end_block = np.inf
 
     @abstractmethod
     def core(self, *args, **kwargs):
@@ -126,7 +130,8 @@ class PulseqDesign(ABC):
             if self.__standalone__:
                 self.seq.get_initial_status()
 
-        if self.mode == "rt":
+        if self.mode == "rt" or self.mode == "static":
+            self.seq.prot.set_encoding(self.seqID)
             self._singleton = False
             if self.__standalone__:
                 self.seq.clear_buffer()
@@ -166,12 +171,16 @@ class CompositeDesign:
 
         # Shared sequence
         self.seq = Sequence(designs[0].seq.system, designs[0].seq.use_block_cache)
+        self.seq.prot = ISMRMRDBuilder(self._mode)
 
         # Replace child sequences with shared one
         for n, d in enumerate(self.designs, start=1):
             d.seq = self.seq
             d.__standalone__ = False
             d.seqID = n
+            
+        self._start_block = 0
+        self._end_block = np.inf
 
     @property
     def mode(self):

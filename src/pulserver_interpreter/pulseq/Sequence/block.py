@@ -174,7 +174,7 @@ def add_block_eval(self, *args) -> None:
 
 
 def add_block_rt(self, *args):
-    """Add a block in real-time mode, keeping max rf and gradient amplitudes and minimum duration."""
+    """Add a block in real-time mode."""
     if self.current_block >= self.start_block and self.current_block < self.end_block:
         self.seq.add_block(*args)
     self.current_block += 1
